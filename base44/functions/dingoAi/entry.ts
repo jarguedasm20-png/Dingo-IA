@@ -1,4 +1,4 @@
-const geminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+const openAiModel = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 
 const dingoSystemPrompt = `
 You are Dingo, the Monark Design Build assistant for Costa Rica.
@@ -39,15 +39,6 @@ function detectLanguageHint(message: string) {
     : "English";
 }
 
-function extractGeminiText(data: any) {
-  return (
-    data.candidates?.[0]?.content?.parts
-      ?.map((part: { text?: string }) => part.text || "")
-      .join("")
-      .trim() || ""
-  );
-}
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -57,9 +48,9 @@ Deno.serve(async (request) => {
     return jsonResponse(405, { error: "Method not allowed." });
   }
 
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!geminiApiKey) {
-    return jsonResponse(503, { error: "Gemini API key is not configured." });
+  const openAiApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!openAiApiKey) {
+    return jsonResponse(503, { error: "OpenAI API key is not configured." });
   }
 
   let payload: { message?: string; history?: Array<{ role?: string; content?: string }> };
@@ -77,57 +68,47 @@ Deno.serve(async (request) => {
   }
 
   try {
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": geminiApiKey,
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: dingoSystemPrompt }],
-          },
-          contents: [
-            ...history.map((item) => ({
-              role: item.role === "assistant" ? "model" : "user",
-              parts: [{ text: String(item.content || "").slice(0, 1200) }],
-            })),
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `The user's language is ${detectLanguageHint(message)}. Reply only in that language.\n\nUser question: ${message}`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.35,
-            maxOutputTokens: 1600,
-          },
-        }),
+    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openAiApiKey}`,
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        model: openAiModel,
+        temperature: 0.35,
+        max_tokens: 900,
+        messages: [
+          { role: "system", content: dingoSystemPrompt },
+          ...history.map((item) => ({
+            role: item.role === "assistant" ? "assistant" : "user",
+            content: String(item.content || "").slice(0, 1200),
+          })),
+          {
+            role: "user",
+            content: `The user's language is ${detectLanguageHint(message)}. Reply only in that language.\n\nUser question: ${message}`,
+          },
+        ],
+      }),
+    });
 
-    const data = await geminiResponse.json();
+    const data = await openAiResponse.json();
 
-    if (!geminiResponse.ok) {
-      return jsonResponse(geminiResponse.status, {
-        error: data.error?.message || "Gemini request failed.",
+    if (!openAiResponse.ok) {
+      return jsonResponse(openAiResponse.status, {
+        error: data.error?.message || "OpenAI request failed.",
       });
     }
 
     return jsonResponse(200, {
-      reply: extractGeminiText(data) || "I could not generate a response right now.",
-      provider: "gemini",
-      model: geminiModel,
-      finishReason: data.candidates?.[0]?.finishReason || null,
+      reply: String(data.choices?.[0]?.message?.content || "").trim() || "I could not generate a response right now.",
+      provider: "openai",
+      model: openAiModel,
+      finishReason: data.choices?.[0]?.finish_reason || null,
     });
   } catch {
     return jsonResponse(500, {
-      error: "Could not reach Gemini from the Base44 function.",
+      error: "Could not reach OpenAI from the Base44 function.",
     });
   }
 });

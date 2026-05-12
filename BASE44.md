@@ -3,12 +3,14 @@
 This project is structured as a React + Vite app with Dingo UI isolated in reusable components under `src/`.
 
 For a beginner-friendly import checklist, read `BASE44_IMPORT_GUIDE.md`.
+For the embeddable widget instructions, read `BASE44_EMBED_GUIDE.md`.
 
 ## Frontend
 
 - Entry point: `index.html`
 - React mount: `src/main.jsx`
 - Main assistant component: `src/DingoApp.jsx`
+- Embeddable custom element: `src/dingo-widget.jsx`
 - Shared styles: `styles.css`
 - Static images: `public/assets/`
 
@@ -27,6 +29,8 @@ Required environment variables:
 ```bash
 GEMINI_API_KEY=your-server-side-key
 GEMINI_MODEL=gemini-2.5-flash
+OPENAI_API_KEY=your-server-side-openai-key
+OPENAI_MODEL=gpt-4o-mini
 VITE_DINGO_AI_ENDPOINT=/functions/dingoAi
 ```
 

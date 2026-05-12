@@ -4,16 +4,20 @@ const ASSET_VERSION = "2026-05-11-debug-pass";
 const WHATSAPP_URL = "https://api.whatsapp.com/send?phone=50664471212";
 const MONARK_EMAIL = "info@monarkcr.com";
 const AI_ENDPOINT = import.meta.env.VITE_DINGO_AI_ENDPOINT || "/api/ai";
+const ASSET_BASE =
+  typeof window !== "undefined" && window.__DINGO_ASSET_BASE__
+    ? window.__DINGO_ASSET_BASE__
+    : import.meta.env.BASE_URL || "./";
 
 const STATES = {
-  idle: { label: "Idle", image: "/assets/dingo-idle-dog.png" },
-  greeting: { label: "Greeting", image: "/assets/dingo-greeting-dog.png" },
-  listening: { label: "Listening", image: "/assets/dingo-listening-dog.png" },
-  thinking: { label: "Thinking", image: "/assets/dingo-thinking-dog.png" },
-  typing: { label: "Typing / Responding", image: "/assets/dingo-typing-dog.png" },
-  excited: { label: "Excited / Priority", image: "/assets/dingo-excited-dog.png" },
-  confused: { label: "Confused", image: "/assets/dingo-confused-dog.png" },
-  success: { label: "Success / Confirmed", image: "/assets/dingo-success-dog.png" },
+  idle: { label: "Idle", image: "assets/dingo-idle-dog.png" },
+  greeting: { label: "Greeting", image: "assets/dingo-greeting-dog.png" },
+  listening: { label: "Listening", image: "assets/dingo-listening-dog.png" },
+  thinking: { label: "Thinking", image: "assets/dingo-thinking-dog.png" },
+  typing: { label: "Typing / Responding", image: "assets/dingo-typing-dog.png" },
+  excited: { label: "Excited / Priority", image: "assets/dingo-excited-dog.png" },
+  confused: { label: "Confused", image: "assets/dingo-confused-dog.png" },
+  success: { label: "Success / Confirmed", image: "assets/dingo-success-dog.png" },
 };
 
 const QUICK_ACTIONS = [
@@ -53,7 +57,11 @@ const INFO_NUDGES = [
 ];
 
 function avatarPath(state) {
-  return `${STATES[state].image}?v=${ASSET_VERSION}`;
+  return `${new URL(STATES[state].image, ASSET_BASE).href}?v=${ASSET_VERSION}`;
+}
+
+function assetPath(path) {
+  return new URL(path, ASSET_BASE).href;
 }
 
 function detectLanguage(text) {
@@ -719,7 +727,7 @@ export function DingoApp() {
         <section className={`chat-panel ${isOpen ? "open" : ""}`} aria-label="Chat with Dingo">
           <header className="chat-header">
             <div className="assistant-card">
-              <img className="header-logo" src="/assets/monark-logo-round.png" alt="Monark logo" />
+              <img className="header-logo" src={assetPath("assets/monark-logo-round.png")} alt="Monark logo" />
               <div>
                 <p>Monark Guide</p>
                 <span>
