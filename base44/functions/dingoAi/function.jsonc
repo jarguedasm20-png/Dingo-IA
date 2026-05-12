@@ -1,0 +1,4 @@
+{
+  "name": "dingoAi",
+  "description": "Server-side Gemini proxy for Dingo App. Keeps GEMINI_API_KEY outside the frontend."
+}

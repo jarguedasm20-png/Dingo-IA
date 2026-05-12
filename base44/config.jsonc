@@ -1,0 +1,10 @@
+// Base44 project configuration for Dingo App.
+// Build the React/Vite site with npm run build before deploying the site.
+{
+  "name": "dingo-monark-assistant",
+  "description": "Dingo App assistant widget for Monark Design Build.",
+  "functionsDir": "./functions",
+  "site": {
+    "outputDirectory": "../dist"
+  }
+}

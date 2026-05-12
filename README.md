@@ -1,0 +1,51 @@
+# Dingo App
+
+React + Vite assistant widget for Monark Design Build.
+
+## Local development
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create `.env` from `.env.example` and add `GEMINI_API_KEY`.
+
+3. Run the backend API server:
+
+```bash
+npm run server
+```
+
+4. In another terminal, run Vite:
+
+```bash
+npm run dev
+```
+
+Vite runs on `http://127.0.0.1:5173` and proxies `/api` to `http://127.0.0.1:4173`.
+
+## Production build
+
+```bash
+npm run build
+npm start
+```
+
+The Node server serves `dist/` and handles `/api/ai`.
+
+## Security
+
+Do not place API keys in React components or frontend files. Gemini credentials are read from server environment variables only.
+
+## Base44/GitHub readiness
+
+- UI is implemented as React components in `src/DingoApp.jsx`.
+- Static assets live in `public/assets`.
+- Backend AI call is available in `server.js`, as a serverless-style function in `api/ai.js`, and as a Base44-ready function in `base44/functions/dingoAi/entry.ts`.
+- Beginner import guide: `BASE44_IMPORT_GUIDE.md`.
+- Environment variables expected:
+  - `GEMINI_API_KEY`
+  - `GEMINI_MODEL`
+  - `VITE_DINGO_AI_ENDPOINT` for Base44, usually `/functions/dingoAi`
