@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dingo | Monark Design Build AI Assistant</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="blank-page" aria-label="Dingo assistant widget"></main>
+
+    <aside class="dingo-widget" aria-live="polite">
+      <div id="contextNudge" class="context-nudge" role="status"></div>
+      <div id="startHint" class="start-hint">Click Dingo to start</div>
+
+      <button id="dingoBubble" class="dingo-bubble" type="button" aria-label="Open chat with Dingo">
+        <span class="status-ring"></span>
+        <img
+          id="dingoAvatar"
+          class="avatar-current"
+          src="assets/dingo-idle-dog.png?v=2026-05-11-debug-pass"
+          alt="Dingo Idle state"
+          width="108"
+          height="108"
+          decoding="async"
+          fetchpriority="high"
+        />
+        <span id="notificationDot" class="notification-dot"></span>
+      </button>
+
+      <section id="costCalculator" class="cost-calculator" aria-label="Approximate cost per square meter calculator">
+        <button id="closeCostCalculator" class="cost-calculator-close" type="button" aria-label="Close calculator">x</button>
+        <h2>Approximate cost per m²</h2>
+        <label>
+          Area
+          <input id="costArea" type="text" inputmode="decimal" placeholder="Example: 100" />
+        </label>
+        <label>
+          Unit
+          <select id="costUnit">
+            <option value="sqm">m²</option>
+            <option value="sqft">sq ft</option>
+          </select>
+        </label>
+        <label>
+          Category
+          <select id="costCategory">
+            <option value="basic">Monark Standard - Estimated price: US$1,600 – US$1,800 / m²</option>
+            <option value="tropical">Tropical Plus - Estimated price: US$1,800 – US$2,400 / m²</option>
+            <option value="premium">Custom Premium - Estimated price: custom made</option>
+          </select>
+        </label>
+        <div id="costResult" class="cost-result">Enter the area and select a category.</div>
+        <p class="cost-note">This calculation is approximate. Processing, plan drafting, permits, technical studies, and legal costs are estimated separately.</p>
+      </section>
+
+      <section id="chatPanel" class="chat-panel" aria-label="Chat with Dingo">
+        <header class="chat-header">
+          <button id="backToStart" class="back-button" type="button" aria-label="Back to options">‹</button>
+          <div class="assistant-card">
+            <img id="headerAvatar" class="header-logo" src="assets/monark-logo-round.png" alt="Monark logo" />
+            <div>
+              <p>Monark Guide</p>
+              <span><i></i> Online</span>
+            </div>
+          </div>
+          <button id="closeChat" class="icon-button" type="button" aria-label="Close chat">x</button>
+        </header>
+
+        <div id="chatMessages" class="chat-messages">
+          <section class="welcome-card" aria-label="Dingo introduction">
+            <div class="welcome-avatar">
+              <img src="assets/dingo-excited-dog.png?v=2026-05-10-centered-moods-2" alt="" />
+            </div>
+            <div class="welcome-copy">
+              <p>Hi, I am your Monark project guide. I can help you understand how to design and build a tropical home in Costa Rica.</p>
+              <p>What brings you here today?</p>
+            </div>
+          </section>
+        </div>
+
+        <div class="quick-actions" aria-label="Frequently asked questions">
+          <button type="button" data-prompt="I want to build in Guanacaste. What should I know first?">I want to build in Guanacaste</button>
+          <button type="button" data-prompt="I already own land in Costa Rica. What should I prepare before designing?">I already own land</button>
+          <button type="button" data-prompt="I live outside Costa Rica. How can I manage a design build project remotely?">I live outside Costa Rica</button>
+          <button type="button" data-prompt="Show me the Monark process for designing and building a home.">Show me the Monark process</button>
+        </div>
+
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" type="text" autocomplete="off" placeholder="Ask me anything..." aria-label="Ask Dingo anything" />
+          <button id="chatSubmit" class="chat-submit" type="submit" aria-label="Send message">
+            <span>&gt;</span>
+          </button>
+        </form>
+
+        <button id="contactUsButton" class="contact-us-button" type="button">
+          <span>+</span>
+          Contact us
+        </button>
+        <div id="contactMenu" class="contact-menu" aria-label="Contact options">
+          <button id="scheduleFromContact" type="button"><span>cal</span> Schedule a video call</button>
+          <a href="https://api.whatsapp.com/send?phone=50664471212" target="_blank" rel="noreferrer"><span>wa</span> Send WhatsApp</a>
+          <a href="mailto:info@monarkcr.com"><span>@</span> Send Email</a>
+        </div>
+
+        <button id="openCostCalculator" class="cost-calculator-button" type="button">
+          <span>m²</span>
+          Quick Estimate
+        </button>
+
+        <p class="chat-footer">Monark Design Build - Costa Rica</p>
+      </section>
+    </aside>
+
+    <section id="projectPopover" class="project-popover" aria-label="Project description prompt">
+      <button id="projectPopoverClose" class="project-popover-close" type="button" aria-label="Close project prompt">x</button>
+      <p>If you describe your project, we can help you size it better.</p>
+      <form id="projectPopoverForm">
+        <input id="projectPopoverInput" type="text" autocomplete="off" placeholder="Brief project description" aria-label="Brief project description" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+    <script src="app.js"></script>
+  </body>
+</html>
