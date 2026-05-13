@@ -20,19 +20,21 @@ const STATES = {
 const QUICK_ACTIONS = [
   {
     label: "I want to build in Guanacaste",
-    prompt: "I want to build in Guanacaste. What should I know first?",
+    prompt: "I want to build in Guanacaste",
+    response:
+      "Great. Guanacaste is a beautiful place to build, but the site conditions matter a lot.\n\nSun, wind, views, water, access, and permits can all affect the design.\n\nDo you already have land there, or are you still looking?",
   },
   {
     label: "I already own land",
-    prompt: "I already own land in Costa Rica. What should I prepare before designing?",
+    prompt: "I already own land",
+    response:
+      "Perfect. That is the best place to start.\n\nBefore designing, we would need to understand the lot: access, slope, views, utilities, setbacks, and water availability.\n\nDo you already have a survey or site plan?",
   },
   {
     label: "I live outside Costa Rica",
-    prompt: "I live outside Costa Rica. How can I manage a design build project remotely?",
-  },
-  {
-    label: "Show me the Monark process",
-    prompt: "Show me the Monark process for designing and building a home.",
+    prompt: "I live outside Costa Rica",
+    response:
+      "No problem. We can start the early planning remotely.\n\nThe first step is usually to understand your land, goals, budget range, and the type of home you want to build.\n\nDo you already own property in Costa Rica?",
   },
 ];
 
@@ -90,15 +92,32 @@ function isSchedulingRequest(text) {
 function shouldUseLocalAnswer(text) {
   return (
     isSchedulingRequest(text) ||
+    isRestrictedTechnicalQuestion(text) ||
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres|que haces|qué haces|how can you help|what can you do|help me|ayudame|ayúdame|hola|hello|hi|buenas|contact|contacto|whatsapp|phone|telefono|teléfono|email|correo)\b/i.test(
       text,
     )
   );
 }
 
+function isRestrictedTechnicalQuestion(text) {
+  return /\b(openai|api|api key|codex|github|backend|frontend|model|prompt|system instruction|widget|built|developed|c[oó]mo fuiste creado|como fuiste creado|como estas hecho|cómo estás hecho|que api|qué api|conectado a github)\b/i.test(
+    text,
+  );
+}
+
 function craftLocalReply(text) {
   const language = detectLanguage(text);
   const lower = text.toLowerCase();
+
+  if (isRestrictedTechnicalQuestion(lower)) {
+    return {
+      state: "confused",
+      text:
+        language === "es"
+          ? "Eso está guardado en la casita de Dingo.\n\nPero sí puedo ayudarte con Monark, diseño tropical o construir en Costa Rica."
+          : "That is locked in the doghouse.\n\nBut I can help you with Monark, design, or building in Costa Rica.",
+    };
+  }
 
   if (/\b(quien eres|quién eres|who are you|what are you|como te llamas|your name|tu nombre|qué eres|que eres)\b/i.test(lower)) {
     return {
@@ -531,7 +550,7 @@ export function DingoApp() {
   }
 
   function remember(role, content) {
-    setConversation((current) => [...current, { role, content }].slice(-8));
+    setConversation((current) => [...current, { role, content }].slice(-16));
   }
 
   function scrollToMessageStart(index) {
@@ -656,6 +675,21 @@ export function DingoApp() {
     }, 550);
   }
 
+  function submitQuickAction(action) {
+    openPanel();
+    const userText = action.prompt;
+    addMessage({ sender: "user", text: userText }, "end");
+    addMessage({ sender: "bot", text: action.response }, "start");
+    remember("user", userText);
+    remember("assistant", action.response);
+    setInput("");
+    setIsTyping(false);
+    setState("success");
+    audio.play("reply");
+    track("quick_action_clicked", { label: action.label });
+    window.setTimeout(() => setState("listening"), 1800);
+  }
+
   function showInfoNudge() {
     if (isOpen || popoverVisible) return;
     const text = INFO_NUDGES[metrics.length % INFO_NUDGES.length];
@@ -773,10 +807,7 @@ export function DingoApp() {
               <button
                 key={action.label}
                 type="button"
-                onClick={() => {
-                  openPanel();
-                  submitPrompt(action.prompt);
-                }}
+                onClick={() => submitQuickAction(action)}
               >
                 {action.label}
               </button>

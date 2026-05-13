@@ -600,9 +600,16 @@ function isSchedulingRequest(text) {
 function shouldUseLocalAnswer(prompt) {
   return (
     isSchedulingRequest(prompt) ||
+    isRestrictedTechnicalQuestion(prompt) ||
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres|que haces|qué haces|how can you help|what can you do|help me|ayudame|ayúdame|hola|hello|hi|buenas|contact|contacto|whatsapp|phone|telefono|teléfono|email|correo)\b/i.test(
       prompt,
     )
+  );
+}
+
+function isRestrictedTechnicalQuestion(prompt) {
+  return /\b(openai|api|api key|codex|github|backend|frontend|model|prompt|system instruction|widget|built|developed|como fuiste creado|c[oó]mo fuiste creado|como estas hecho|c[oó]mo estas hecho|que api|qu[eé] api|conectado a github)\b/i.test(
+    prompt,
   );
 }
 
@@ -636,7 +643,7 @@ function rememberConversation(role, content) {
     role,
     content,
   });
-  sessionConversation = sessionConversation.slice(-8);
+  sessionConversation = sessionConversation.slice(-16);
 }
 
 function getNextSaturdays(count = 5) {
@@ -935,6 +942,16 @@ function craftReply(text) {
   const language = detectLanguage(text);
   const lower = text.toLowerCase();
 
+  if (isRestrictedTechnicalQuestion(lower)) {
+    return {
+      state: "confused",
+      text:
+        language === "es"
+          ? "Eso esta guardado en la casita de Dingo.\n\nPero si puedo ayudarte con Monark, diseno tropical o construir en Costa Rica."
+          : "That is locked in the doghouse.\n\nBut I can help you with Monark, design, or building in Costa Rica.",
+    };
+  }
+
   if (
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres)\b/i.test(
       lower,
@@ -1192,6 +1209,27 @@ function submitPrompt(text) {
   }, 550);
 }
 
+function submitQuickAction(button) {
+  const prompt = button.dataset.prompt?.trim();
+  const response = button.dataset.response?.trim();
+  if (!prompt || !response) {
+    submitPrompt(prompt || "");
+    return;
+  }
+
+  enterConversationMode();
+  addMessage(prompt, "user");
+  addMessage(response, "bot", "start");
+  rememberConversation("user", prompt);
+  rememberConversation("assistant", response);
+  input.value = "";
+  stopMoodLoop();
+  isUserTyping = false;
+  setState("success", { decisive: true });
+  playSound("reply");
+  scheduleState("listening", 1800);
+}
+
 bubble.addEventListener("click", () => {
   if (widget.classList.contains("calculator-open")) {
     closeCalculator();
@@ -1249,7 +1287,7 @@ quickActions.forEach((button) => {
 
     openPanel();
     trackDingoEvent("quick_action_clicked", { label: button.textContent.trim() });
-    submitPrompt(button.dataset.prompt);
+    submitQuickAction(button);
   });
 });
 
