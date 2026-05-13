@@ -1,0 +1,41 @@
+{
+  "updatedAt": "2026-05-13T00:00:00.000Z",
+  "purpose": "Manual Monark knowledge additions. Edit this file when website crawling is not available or when Monark wants to add approved public-facing answers.",
+  "chunks": [
+    {
+      "id": "manual-contact-and-consultation",
+      "url": "https://monarkcr.com/",
+      "title": "Monark Contact and Consultation",
+      "headings": [
+        "Contact",
+        "Consultation"
+      ],
+      "keywords": [
+        "contact",
+        "consultation",
+        "video call",
+        "WhatsApp",
+        "email",
+        "meeting"
+      ],
+      "text": "Monark can be contacted through WhatsApp or phone at +506 6447 1212 and by email at info@monarkcr.com. The Dingo App can guide users toward requesting a consultation or scheduling a video call with Monark's Architect and Engineer. Meetings in the Dingo App are configured as 90-minute calls."
+    },
+    {
+      "id": "manual-response-boundaries",
+      "url": "https://monarkcr.com/",
+      "title": "Response Boundaries",
+      "headings": [
+        "Approved Assistant Behavior"
+      ],
+      "keywords": [
+        "prices",
+        "timeline",
+        "warranty",
+        "permits",
+        "legal",
+        "technical"
+      ],
+      "text": "Dingo should not invent Monark-specific prices, timelines, warranties, legal promises, permit approvals, or technical guarantees. If a user asks for a detail that is not available in the Monark website knowledge, Dingo should say that it does not have that specific detail from Monark's website yet and suggest contacting Monark directly."
+    }
+  ]
+}

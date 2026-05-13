@@ -1,18 +1,36 @@
 const openAiModel = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 
+type ChatMessage = {
+  role?: string;
+  content?: string;
+};
+
+type KnowledgeChunk = {
+  id: string;
+  url: string;
+  title: string;
+  headings?: string[];
+  text: string;
+  keywords?: string[];
+};
+
 const dingoSystemPrompt = `
 You are Dingo, the Monark Design Build assistant for Costa Rica.
 You are not a generic chatbot. You are a focused project guide for Monark Design Build.
-Monark Design Build is a design-build company in Costa Rica. Contact options available in the app: WhatsApp/phone +506 6447 1212, email info@monarkcr.com, location San Jose, Costa Rica.
+Monark Design Build is a high-end architecture and design-build studio in Costa Rica.
 The app can schedule video calls with Monark's Architect and Engineer. Meetings last 90 minutes. Availability is Saturdays from 7:00 AM to 5:00 PM.
-Answer simple questions about construction, architectural design, remodeling, materials, project planning, permits, budgets, Costa Rica building context, and Monark Design Build.
-Always answer in the same language the user uses. If the user writes in English, answer in English. If the user writes in Spanish, answer in Spanish.
-If the question is outside construction, Monark, Costa Rica, design, remodeling, permits, budgets, or project planning, politely redirect to those topics.
-Do not invent Monark-specific contracts, prices, warranties, availability, legal promises, or professional engineering opinions.
-For structural, legal, CFIA, municipal, electrical, safety, or permit topics, give general orientation and recommend confirming with the responsible licensed professional or authority.
-Keep answers concise, warm, and practical. Do not use emojis. Do not use decorative asterisks as bullets. For normal questions, answer under 180 words. Use elegant short sections with bold subtitles in Markdown, for example: **Site**, **Budget**, **Permits**. Use plain hyphen bullets only when useful.
-When the user asks a vague question, answer briefly and ask one useful follow-up question.
-When useful, guide the user toward one of these next steps: describe the project, prepare land/project details, contact Monark, or schedule a video call.
+
+Use the Monark website knowledge provided in the prompt as your primary source of truth.
+Prioritize Monark website content over generic AI knowledge.
+If the answer is not supported by the website knowledge, say that you do not have that specific detail from Monark's website yet and suggest contacting Monark directly.
+Do not invent prices, timelines, warranties, legal claims, technical guarantees, availability, or contractual details unless they are clearly included in the provided Monark website knowledge.
+
+Answer in the same language the user uses when possible. If the user writes in English, answer in English. If the user writes in Spanish, answer in Spanish.
+Sound professional, warm, premium, concise, and aligned with a tropical architecture and eco-conscious design studio.
+For structural, legal, CFIA, municipal, electrical, safety, or permit topics, give general orientation only and recommend confirming with the responsible licensed professional or authority.
+Keep answers concise and useful. Do not use emojis. Do not use decorative asterisks as bullets.
+Use elegant short sections with bold subtitles in Markdown, for example: **Design**, **Process**, **Next step**.
+When useful, guide the user toward describing the project, contacting Monark, or scheduling a consultation.
 `;
 
 const corsHeaders = {
@@ -20,6 +38,42 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+const stopWords = new Set([
+  "a",
+  "about",
+  "and",
+  "are",
+  "as",
+  "can",
+  "como",
+  "con",
+  "de",
+  "del",
+  "does",
+  "el",
+  "en",
+  "for",
+  "from",
+  "how",
+  "i",
+  "is",
+  "la",
+  "las",
+  "los",
+  "me",
+  "monark",
+  "of",
+  "para",
+  "que",
+  "the",
+  "to",
+  "un",
+  "una",
+  "what",
+  "with",
+  "y",
+]);
 
 function jsonResponse(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
@@ -31,12 +85,109 @@ function jsonResponse(status: number, payload: Record<string, unknown>) {
   });
 }
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(value: string) {
+  return normalizeText(value)
+    .split(" ")
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+}
+
 function detectLanguageHint(message: string) {
-  return /[¿¡áéíóúñ]|\b(hola|como|cómo|que|qué|presupuesto|diseño|construcción|remodelación|materiales|permiso|gracias)\b/i.test(
-    message,
+  const normalized = normalizeText(message);
+  return /\b(hola|como|cual|cuando|donde|servicios|diseno|construccion|contactar|presupuesto|permiso|gracias|casa|guanacaste)\b/i.test(
+    normalized,
   )
     ? "Spanish"
     : "English";
+}
+
+async function readKnowledgeFile(name: string): Promise<KnowledgeChunk[]> {
+  try {
+    const text = await Deno.readTextFile(new URL(`./${name}`, import.meta.url));
+    const data = JSON.parse(text);
+    return Array.isArray(data?.chunks) ? data.chunks : [];
+  } catch {
+    return [];
+  }
+}
+
+const knowledgePromise = Promise.all([
+  readKnowledgeFile("monarkKnowledge.json"),
+  readKnowledgeFile("monarkKnowledge.manual.json"),
+]).then(([synced, manual]) => {
+  const byId = new Map<string, KnowledgeChunk>();
+  for (const chunk of [...synced, ...manual]) {
+    if (chunk?.id && chunk?.text) byId.set(chunk.id, chunk);
+  }
+  return [...byId.values()];
+});
+
+function scoreChunk(chunk: KnowledgeChunk, queryTokens: string[], normalizedQuestion: string) {
+  const title = normalizeText(chunk.title || "");
+  const headings = normalizeText((chunk.headings || []).join(" "));
+  const keywords = normalizeText((chunk.keywords || []).join(" "));
+  const text = normalizeText(chunk.text || "");
+
+  let score = 0;
+  for (const token of queryTokens) {
+    if (title.includes(token)) score += 8;
+    if (headings.includes(token)) score += 6;
+    if (keywords.includes(token)) score += 5;
+    if (text.includes(token)) score += 1;
+  }
+
+  if (normalizedQuestion.length > 8 && text.includes(normalizedQuestion)) score += 20;
+  return score;
+}
+
+function findRelevantKnowledge(chunks: KnowledgeChunk[], question: string) {
+  const queryTokens = tokenize(question);
+  const normalizedQuestion = normalizeText(question);
+  if (!queryTokens.length) return [];
+
+  return chunks
+    .map((chunk) => ({
+      chunk,
+      score: scoreChunk(chunk, queryTokens, normalizedQuestion),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 7)
+    .map((item) => item.chunk);
+}
+
+function formatKnowledgeContext(chunks: KnowledgeChunk[]) {
+  if (!chunks.length) {
+    return "No relevant Monark website chunks were found for this question.";
+  }
+
+  let usedCharacters = 0;
+  return chunks
+    .map((chunk, index) => {
+      const cleanText = chunk.text.replace(/\s+/g, " ").trim();
+      const remaining = Math.max(0, 5600 - usedCharacters);
+      const excerpt = cleanText.slice(0, remaining);
+      usedCharacters += excerpt.length;
+      return [
+        `Source ${index + 1}`,
+        `Title: ${chunk.title}`,
+        `URL: ${chunk.url}`,
+        chunk.headings?.length ? `Headings: ${chunk.headings.join(" > ")}` : "",
+        `Content: ${excerpt}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n---\n\n");
 }
 
 Deno.serve(async (request) => {
@@ -53,7 +204,7 @@ Deno.serve(async (request) => {
     return jsonResponse(503, { error: "OpenAI API key is not configured." });
   }
 
-  let payload: { message?: string; history?: Array<{ role?: string; content?: string }> };
+  let payload: { message?: string; history?: ChatMessage[] };
   try {
     payload = await request.json();
   } catch {
@@ -67,6 +218,10 @@ Deno.serve(async (request) => {
     return jsonResponse(400, { error: "Message is required." });
   }
 
+  const knowledge = await knowledgePromise;
+  const relevantKnowledge = findRelevantKnowledge(knowledge, message);
+  const knowledgeContext = formatKnowledgeContext(relevantKnowledge);
+
   try {
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -76,10 +231,14 @@ Deno.serve(async (request) => {
       },
       body: JSON.stringify({
         model: openAiModel,
-        temperature: 0.35,
+        temperature: 0.25,
         max_tokens: 900,
         messages: [
           { role: "system", content: dingoSystemPrompt },
+          {
+            role: "system",
+            content: `Relevant Monark website knowledge:\n\n${knowledgeContext}`,
+          },
           ...history.map((item) => ({
             role: item.role === "assistant" ? "assistant" : "user",
             content: String(item.content || "").slice(0, 1200),
@@ -101,10 +260,15 @@ Deno.serve(async (request) => {
     }
 
     return jsonResponse(200, {
-      reply: String(data.choices?.[0]?.message?.content || "").trim() || "I could not generate a response right now.",
+      reply: String(data.choices?.[0]?.message?.content || "").trim() ||
+        "I could not generate a response right now.",
       provider: "openai",
       model: openAiModel,
       finishReason: data.choices?.[0]?.finish_reason || null,
+      sources: relevantKnowledge.map((chunk) => ({
+        title: chunk.title,
+        url: chunk.url,
+      })),
     });
   } catch {
     return jsonResponse(500, {
