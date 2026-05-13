@@ -93,6 +93,7 @@ function shouldUseLocalAnswer(text) {
   return (
     isSchedulingRequest(text) ||
     isRestrictedTechnicalQuestion(text) ||
+    isPricingQuestion(text) ||
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres|que haces|qué haces|how can you help|what can you do|help me|ayudame|ayúdame|hola|hello|hi|buenas|contact|contacto|whatsapp|phone|telefono|teléfono|email|correo)\b/i.test(
       text,
     )
@@ -101,6 +102,12 @@ function shouldUseLocalAnswer(text) {
 
 function isRestrictedTechnicalQuestion(text) {
   return /\b(openai|api|api key|codex|github|backend|frontend|model|prompt|system instruction|widget|built|developed|c[oó]mo fuiste creado|como fuiste creado|como estas hecho|cómo estás hecho|que api|qué api|conectado a github)\b/i.test(
+    text,
+  );
+}
+
+function isPricingQuestion(text) {
+  return /\b(price|pricing|cost|budget|estimate|investment|cost per square meter|square meter|sqm|m2|m²|house cost|construction cost|cuanto cuesta|cuánto cuesta|precio|costo|presupuesto|cotizar|estimaci[oó]n|metro cuadrado|metros cuadrados|inversi[oó]n)\b/i.test(
     text,
   );
 }
@@ -116,6 +123,16 @@ function craftLocalReply(text) {
         language === "es"
           ? "Eso está guardado en la casita de Dingo.\n\nPero sí puedo ayudarte con Monark, diseño tropical o construir en Costa Rica."
           : "That is locked in the doghouse.\n\nBut I can help you with Monark, design, or building in Costa Rica.",
+    };
+  }
+
+  if (isPricingQuestion(lower)) {
+    return {
+      state: "thinking",
+      text:
+        language === "es"
+          ? "Buena pregunta.\n\nPara precios, lo mejor es usar Quick Estimate en el menú principal.\n\nTe da una primera referencia según el área en m² / sqm.\n\n¿Ya sabes el área aproximada?"
+          : "Good question.\n\nFor pricing, the best first step is to use Quick Estimate in the main menu.\n\nIt gives you a first reference based on the project area in m² / sqm.\n\nDo you already know the approximate area?",
     };
   }
 
@@ -135,7 +152,7 @@ function craftLocalReply(text) {
       text:
         language === "es"
           ? "Puedo ayudarte a ordenar tus ideas de proyecto, entender materiales, presupuesto, permisos, cronograma, diseño y primeros pasos. También puedo ayudarte a preparar información para una llamada con Monark."
-          : "I can help you organize your project ideas, understand materials, budget, permits, timeline, design direction, and first steps. I can also help you prepare information for a call with Monark.",
+          : "I can help you organize project ideas, understand materials, permits, timeline, design direction, and first steps. For pricing, use Quick Estimate in the main menu. I can also help you prepare for a call with Monark.",
     };
   }
 
