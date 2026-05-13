@@ -59,6 +59,9 @@ input {
   font-family: Georgia, "Times New Roman", serif;
   font-size: 13px;
   line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
@@ -77,6 +80,41 @@ input {
 
 .context-nudge.sweeping {
   animation: nudge-sweep-out 520ms ease forwards;
+}
+
+.context-nudge-close {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: rgba(29, 39, 48, 0.45);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.context-action-message {
+  width: 100%;
+}
+
+.context-action-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+.context-action-buttons button,
+.context-action-buttons a {
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #ead8c9;
+  border-radius: 10px;
+  background: #fffdf9;
+  color: #1d2730;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .start-hint {
@@ -1173,6 +1211,14 @@ input {
     clip-path: inset(0 100% 0 0);
     opacity: 0;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-nudge,
+  .context-nudge.sweeping {
+    animation: none;
+    transition: none;
   }
 }
 

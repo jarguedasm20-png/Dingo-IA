@@ -48,12 +48,88 @@ const MEETING_SLOTS = [
   { label: "3:30 PM", value: "15:30" },
 ];
 
-const INFO_NUDGES = [
-  "Planning to build in Costa Rica? Dingo can help you organize your first questions.",
-  "Have design doubts? I can help you think through style, materials, and next steps.",
-  "Building remotely? Ask Dingo how to prepare for a Monark video call.",
-  "Need a starting point? Tell Dingo about your land, budget, timeline, or design goals.",
-];
+const MONARK_WHATSAPP_URL = WHATSAPP_URL;
+const MONARK_VIDEO_CALL_URL = "#schedule-video-call";
+const MONARK_CONTACT_URL = `mailto:${MONARK_EMAIL}`;
+
+const CONTEXTUAL_BUBBLES = {
+  hero: [
+    "Thinking about building in Costa Rica?",
+    "Guanacaste is beautiful, but the site conditions matter a lot.",
+    "A good tropical home starts with the land, not only the floor plan.",
+    "Want to understand what you could build here?",
+    "Have land already, or are you still exploring?",
+  ],
+  design: [
+    "Good architecture starts with how you want to live.",
+    "Designing for the tropics is about sun, wind, shade, and lifestyle.",
+    "Views, privacy, ventilation, and shade can shape the whole design.",
+    "A short meeting can really help clarify the vision.",
+    "Want to talk through your dream home idea?",
+  ],
+  "design-build": [
+    "Building remotely can work well when the process is clear.",
+    "The right team makes design and construction much smoother.",
+    "Before talking numbers, it helps to understand the scope and site.",
+    "This might be worth reviewing with the Monark team.",
+    "Want help preparing your first project brief?",
+  ],
+  "property-advisory": [
+    "Before buying land, it is smart to understand what can actually be built.",
+    "A beautiful lot can still have hidden challenges.",
+    "Access, water, slope, zoning, and views can change everything.",
+    "Looking at land? This is worth reviewing before buying.",
+    "Want help knowing what to check before moving forward?",
+  ],
+  guanacaste: [
+    "Guanacaste has amazing potential, but every site behaves differently.",
+    "Sun exposure and wind direction matter a lot here.",
+    "Water availability is one of the first things to confirm.",
+    "Building in Guanacaste? Start by understanding the land.",
+    "Want to share what area of Guanacaste you are considering?",
+  ],
+  sustainability: [
+    "Sustainable design starts with orientation, shade, and airflow.",
+    "A tropical home should work with nature, not fight against it.",
+    "Good design can reduce heat before adding mechanical solutions.",
+    "Want to explore a more climate-conscious design approach?",
+    "This is where tropical design becomes practical.",
+  ],
+  portfolio: [
+    "Like this style?",
+    "A strong project image usually comes from strong early decisions.",
+    "Want to create something with this level of intention?",
+    "I can help you explain what you like before meeting the team.",
+    "This could help define your project direction.",
+  ],
+  "quick-estimate": [
+    "Want a first idea of project cost?",
+    "Quick Estimate can give you a first reference using m² / sqm.",
+    "For pricing, start with the approximate construction area.",
+    "The estimate is only a first guide, but it helps start the conversation.",
+    "Not sure about the area? I can help you think it through.",
+  ],
+  contact: [
+    "This is probably the right moment to talk with the team.",
+    "A short meeting can clarify a lot quickly.",
+    "You do not need to have everything figured out before reaching out.",
+    "Want to contact the team and start the conversation?",
+    "If your project is becoming specific, a meeting is the best move.",
+  ],
+  "remote-clients": [
+    "You can start the early planning even if you are outside Costa Rica.",
+    "Remote projects work better when the first steps are organized.",
+    "If you live abroad, clear communication and local guidance matter.",
+    "Land, budget, goals, and timing are the first things to organize.",
+    "Are you planning from abroad?",
+  ],
+  "text-selection": [
+    "That caught your attention?",
+    "Want help understanding this part?",
+    "This might be worth asking the team about.",
+    "Want me to help you turn this into a question for Monark?",
+  ],
+};
 
 function avatarPath(state) {
   return `${new URL(STATES[state].image, getAssetBase()).href}?v=${ASSET_VERSION}`;
@@ -73,6 +149,57 @@ function getAiEndpoint() {
   return typeof window !== "undefined" && window.__DINGO_AI_ENDPOINT__
     ? window.__DINGO_AI_ENDPOINT__
     : DEFAULT_AI_ENDPOINT;
+}
+
+function getContextualSectionFromElement(element) {
+  const section = element?.closest?.("[data-dingo-section]")?.getAttribute("data-dingo-section");
+  if (section && CONTEXTUAL_BUBBLES[section]) return section;
+
+  const text = `${element?.id || ""} ${element?.className || ""} ${element?.textContent || ""}`.toLowerCase();
+  if (/property advisory|property|land|before buying/.test(text)) return "property-advisory";
+  if (/quick estimate|cost|pricing|price|budget|m²|sqm/.test(text)) return "quick-estimate";
+  if (/contact|whatsapp|email|call/.test(text)) return "contact";
+  if (/guanacaste|playa grande|tamarindo|nosara|papagayo/.test(text)) return "guanacaste";
+  if (/sustainab|ecological|nature|passive|tropical/.test(text)) return "sustainability";
+  if (/portfolio|project|secret gardens|casa alamo|natura loft|garabito/.test(text)) return "portfolio";
+  if (/design build|construction|build remotely|remote/.test(text)) return "design-build";
+  if (/architecture|design|home|villa|residence/.test(text)) return "design";
+  return "hero";
+}
+
+function getVisibleContextualSection() {
+  const candidates = [
+    ...document.querySelectorAll(
+      "[data-dingo-section], section, article, main, header, [id], [class*='section'], [class*='project'], [class*='contact']",
+    ),
+  ].filter((element) => !element.closest("dingo-app") && !element.closest(".dingo-widget"));
+
+  let best = null;
+  let bestScore = 0;
+  const viewportHeight = window.innerHeight || 1;
+
+  for (const element of candidates) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 80 || rect.height < 80 || rect.bottom < 0 || rect.top > viewportHeight) continue;
+    const visible = Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0);
+    const score = visible / Math.max(rect.height, 1);
+    if (score > bestScore) {
+      best = element;
+      bestScore = score;
+    }
+  }
+
+  return getContextualSectionFromElement(best || document.body);
+}
+
+function chooseContextualMessage(section) {
+  const messages = CONTEXTUAL_BUBBLES[section] || CONTEXTUAL_BUBBLES.hero;
+  const shownIds = new Set(JSON.parse(sessionStorage.getItem("dingoContextShownIds") || "[]"));
+  const available = messages
+    .map((text, index) => ({ id: `${section}:${index}`, text }))
+    .filter((item) => !shownIds.has(item.id));
+  const pool = available.length ? available : messages.map((text, index) => ({ id: `${section}:${index}`, text }));
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function detectLanguage(text) {
@@ -315,6 +442,30 @@ function TypingMessage() {
   );
 }
 
+function ContextActionMessage({ section, onSchedule, onKeepExploring, onOpenEstimate }) {
+  const isQuickEstimate = section === "quick-estimate";
+  return (
+    <article className="message bot context-action-message">
+      <div className="context-action-buttons">
+        {isQuickEstimate && (
+          <button type="button" onClick={onOpenEstimate}>
+            Open Quick Estimate
+          </button>
+        )}
+        <a href={MONARK_WHATSAPP_URL} target="_blank" rel="noreferrer">
+          Send WhatsApp message
+        </a>
+        <button type="button" onClick={onSchedule}>
+          Schedule video call
+        </button>
+        <button type="button" onClick={onKeepExploring}>
+          Keep exploring
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function Scheduler({ language, bookings, onBook }) {
   const [selectedDate, setSelectedDate] = useState(getNextSaturdays(1)[0]);
   const [error, setError] = useState("");
@@ -531,7 +682,7 @@ export function DingoApp() {
   const [isTyping, setIsTyping] = useState(false);
   const [showStartHint, setShowStartHint] = useState(true);
   const [contactOpen, setContactOpen] = useState(false);
-  const [nudge, setNudge] = useState("");
+  const [nudge, setNudge] = useState(null);
   const [nudgeSweeping, setNudgeSweeping] = useState(false);
   const [popoverVisible, setPopoverVisible] = useState(false);
   const [popoverShown, setPopoverShown] = useState(false);
@@ -546,6 +697,7 @@ export function DingoApp() {
   const [displayAvatarState, setDisplayAvatarState] = useState(avatarState);
   const [previousAvatarState, setPreviousAvatarState] = useState(null);
   const [isMoodChanging, setIsMoodChanging] = useState(false);
+  const nudgeTimers = useRef([]);
 
   useEffect(() => {
     if (avatarState === displayAvatarState) return undefined;
@@ -596,6 +748,7 @@ export function DingoApp() {
 
   function openPanel() {
     audio.unlock();
+    hideContextNudge(true);
     setIsOpen(true);
     setShowStartHint(false);
     setState("greeting");
@@ -610,6 +763,83 @@ export function DingoApp() {
     setState("idle");
     setContactOpen(false);
     track("chat_closed");
+  }
+
+  function hideContextNudge(immediate = false, ignored = false) {
+    nudgeTimers.current.forEach((timer) => window.clearTimeout(timer));
+    nudgeTimers.current = [];
+    if (ignored && nudge) {
+      sessionStorage.setItem("dingoContextCooldownUntil", String(Date.now() + 45000));
+    }
+    if (immediate) {
+      setNudge(null);
+      setNudgeSweeping(false);
+      return;
+    }
+    setNudgeSweeping(true);
+    const timer = window.setTimeout(() => {
+      setNudge(null);
+      setNudgeSweeping(false);
+    }, 540);
+    nudgeTimers.current.push(timer);
+  }
+
+  function showContextNudge(section, trigger) {
+    const mobile = window.matchMedia("(max-width: 720px)").matches;
+    const maxBubbles = mobile ? 2 : 3;
+    const count = Number(sessionStorage.getItem("dingoContextCount") || "0");
+    const cooldownUntil = Number(sessionStorage.getItem("dingoContextCooldownUntil") || "0");
+    const firstAllowedAt = Number(sessionStorage.getItem("dingoContextFirstAllowedAt") || "0");
+
+    if (isOpen || popoverVisible || nudge || count >= maxBubbles) return;
+    if (Date.now() < Math.max(cooldownUntil, firstAllowedAt)) return;
+    const activeElement = document.activeElement;
+    if (activeElement?.matches?.("input, textarea, select") && !activeElement.closest(".dingo-widget")) return;
+
+    const chosen = chooseContextualMessage(section);
+    const shownIds = new Set(JSON.parse(sessionStorage.getItem("dingoContextShownIds") || "[]"));
+    shownIds.add(chosen.id);
+    sessionStorage.setItem("dingoContextShownIds", JSON.stringify([...shownIds]));
+    sessionStorage.setItem("dingoContextCount", String(count + 1));
+    sessionStorage.setItem("dingoContextCooldownUntil", String(Date.now() + 32000));
+
+    setNudge({ text: chosen.text, section, trigger });
+    setNudgeSweeping(false);
+    setState("listening");
+    audio.play("nudge");
+    track("context_nudge_shown", { section, trigger });
+
+    const timer = window.setTimeout(() => hideContextNudge(false, true), 8500);
+    nudgeTimers.current.push(timer);
+  }
+
+  function getContextClickText(section) {
+    if (section === "property-advisory") {
+      return "Land can look simple, but access, water, slope, and permits matter a lot.\n\nFor a quick question, WhatsApp is fine.\n\nFor reviewing a property seriously, a video call is better.\n\nWant to talk with Monark?";
+    }
+    if (section === "design") {
+      return "This is where a short conversation can really help.\n\nYou can send a quick WhatsApp message, or schedule a video call if you already have a project in mind.\n\nWhich one works better?";
+    }
+    if (section === "quick-estimate") {
+      return "Quick Estimate can help you get a first reference.\n\nAfter that, the Monark team can review the real details with you.\n\nDo you want to start with the estimate or contact the team?";
+    }
+    if (section === "contact") {
+      return "Perfect timing.\n\nFor a simple question, WhatsApp is the fastest way.\n\nFor design, budget, land, or construction strategy, a video call is better.\n\nHow would you like to continue?";
+    }
+    return "Looks like this topic caught your attention.\n\nFor a quick question, WhatsApp works well.\n\nFor design, land, budget, or construction details, a short video call with Monark is better.\n\nHow would you like to continue?";
+  }
+
+  function handleContextNudgeClick() {
+    if (!nudge) return;
+    const section = nudge.section;
+    hideContextNudge(true);
+    openPanel();
+    const reply = getContextClickText(section);
+    addMessage({ sender: "bot", text: reply }, "start");
+    remember("assistant", reply);
+    addMessage({ sender: "context-actions", section }, "start");
+    setState("success");
+    track("context_nudge_clicked", { section });
   }
 
   async function askAi(prompt) {
@@ -707,20 +937,10 @@ export function DingoApp() {
     window.setTimeout(() => setState("listening"), 1800);
   }
 
-  function showInfoNudge() {
-    if (isOpen || popoverVisible) return;
-    const text = INFO_NUDGES[metrics.length % INFO_NUDGES.length];
-    setNudge(text);
-    setNudgeSweeping(false);
-    setState("listening");
-    audio.play("nudge");
-    window.setTimeout(() => {
-      setNudgeSweeping(true);
-      window.setTimeout(() => setNudge(""), 540);
-    }, 15000);
-  }
-
   useEffect(() => {
+    if (!sessionStorage.getItem("dingoContextFirstAllowedAt")) {
+      sessionStorage.setItem("dingoContextFirstAllowedAt", String(Date.now() + 10000));
+    }
     const popoverTimer = window.setTimeout(() => {
       if (!popoverShown && !isOpen) {
         setPopoverShown(true);
@@ -730,12 +950,50 @@ export function DingoApp() {
       }
     }, 18000);
 
-    const nudgeTimer = window.setInterval(showInfoNudge, 40000);
+    let dwellTimer;
+    let scrollTimer;
+    let hoverTimer;
+
+    function scheduleSectionDwell(trigger, delay = 5200) {
+      window.clearTimeout(dwellTimer);
+      dwellTimer = window.setTimeout(() => showContextNudge(getVisibleContextualSection(), trigger), delay);
+    }
+
+    function handleScroll() {
+      window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => scheduleSectionDwell("scroll-pause", 2400), 260);
+    }
+
+    function handlePointerMove(event) {
+      if (window.matchMedia("(max-width: 720px)").matches) return;
+      const section = getContextualSectionFromElement(event.target);
+      window.clearTimeout(hoverTimer);
+      hoverTimer = window.setTimeout(() => showContextNudge(section, "cursor-dwell"), 4200);
+    }
+
+    function handleSelection() {
+      const selection = window.getSelection()?.toString().trim();
+      if (selection && selection.length > 12) {
+        window.setTimeout(() => showContextNudge("text-selection", "text-selection"), 800);
+      }
+    }
+
+    scheduleSectionDwell("section-dwell", 11200);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    document.addEventListener("selectionchange", handleSelection);
+
     return () => {
       window.clearTimeout(popoverTimer);
-      window.clearInterval(nudgeTimer);
+      window.clearTimeout(dwellTimer);
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(hoverTimer);
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("selectionchange", handleSelection);
+      nudgeTimers.current.forEach((timer) => window.clearTimeout(timer));
     };
-  }, [isOpen, popoverShown, popoverVisible, metrics.length]);
+  }, [isOpen, popoverShown, popoverVisible, nudge]);
 
   function bookVideoCall(booking) {
     setBookings((current) => [...current, booking]);
@@ -769,8 +1027,33 @@ export function DingoApp() {
     <>
       <main className="blank-page" aria-label="Dingo assistant widget" />
       <aside className="dingo-widget" data-state={avatarState} aria-live="polite">
-        <div className={`context-nudge ${nudge ? "visible" : ""} ${nudgeSweeping ? "sweeping" : ""}`} role="status">
-          {nudge}
+        <div
+          className={`context-nudge ${nudge ? "visible" : ""} ${nudgeSweeping ? "sweeping" : ""}`}
+          role="button"
+          tabIndex={nudge ? 0 : -1}
+          aria-label={nudge ? `Dingo suggestion: ${nudge.text}` : "Dingo suggestion"}
+          onClick={handleContextNudgeClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              handleContextNudgeClick();
+            }
+          }}
+        >
+          <span>{nudge?.text || ""}</span>
+          {nudge && (
+            <button
+              className="context-nudge-close"
+              type="button"
+              aria-label="Dismiss Dingo suggestion"
+              onClick={(event) => {
+                event.stopPropagation();
+                hideContextNudge(false, true);
+              }}
+            >
+              x
+            </button>
+          )}
         </div>
         {showStartHint && <div className="start-hint">Click Dingo to start</div>}
 
@@ -809,6 +1092,23 @@ export function DingoApp() {
                   <article className="message bot schedule-message" data-message-index={index} key={`scheduler-${index}`}>
                     <Scheduler bookings={bookings} language={message.language} onBook={bookVideoCall} />
                   </article>
+                );
+              }
+              if (message.sender === "context-actions") {
+                return (
+                  <div data-message-index={index} key={`context-actions-${index}`}>
+                    <ContextActionMessage
+                      section={message.section}
+                      onSchedule={() => submitPrompt("Schedule a video call with our Architect and Engineer.")}
+                      onKeepExploring={closePanel}
+                      onOpenEstimate={() => {
+                        const reply =
+                          "Use Quick Estimate from the main menu to get a first reference based on m² / sqm.\n\nAfter that, I can help you contact Monark.";
+                        addMessage({ sender: "bot", text: reply }, "start");
+                        remember("assistant", reply);
+                      }}
+                    />
+                  </div>
                 );
               }
               return (
