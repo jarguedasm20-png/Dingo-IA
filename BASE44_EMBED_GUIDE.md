@@ -4,6 +4,8 @@ This project now includes an isolated, embeddable Dingo App widget.
 
 The standalone React/Vite app still works normally. The embed version is an additional build output and does not replace the original app.
 
+For the recommended Base44 static package workflow, see `BASE44_EXPORT_GUIDE.md`. It generates `base44-export/dingo/dingo-widget.js` and `base44-export/dingo/assets/` so Base44 can load `/dingo/dingo-widget.js` reliably.
+
 ## What Gets Built
 
 After running:

@@ -5,6 +5,7 @@ import styles from "../styles.css?inline";
 
 const elementName = "dingo-app";
 const assetBase = new URL("./", import.meta.url).href;
+const defaultAiEndpoint = "/functions/dingoAi";
 
 class DingoAppElement extends HTMLElement {
   connectedCallback() {
@@ -13,6 +14,9 @@ class DingoAppElement extends HTMLElement {
     }
 
     window.__DINGO_ASSET_BASE__ = this.getAttribute("asset-base") || assetBase;
+    window.__DINGO_AI_ENDPOINT__ = this.getAttribute("ai-endpoint") ||
+      window.__DINGO_AI_ENDPOINT__ ||
+      defaultAiEndpoint;
 
     const shadow = this.attachShadow({ mode: "open" });
     const style = document.createElement("style");

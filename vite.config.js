@@ -11,6 +11,8 @@ export default defineConfig({
     },
   },
   build: {
+    assetsDir: "assets",
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         app: "index.html",

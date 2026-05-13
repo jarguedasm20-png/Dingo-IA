@@ -3,11 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const ASSET_VERSION = "2026-05-11-debug-pass";
 const WHATSAPP_URL = "https://api.whatsapp.com/send?phone=50664471212";
 const MONARK_EMAIL = "info@monarkcr.com";
-const AI_ENDPOINT = import.meta.env.VITE_DINGO_AI_ENDPOINT || "/api/ai";
-const ASSET_BASE =
-  typeof window !== "undefined" && window.__DINGO_ASSET_BASE__
-    ? window.__DINGO_ASSET_BASE__
-    : import.meta.env.BASE_URL || "./";
+const DEFAULT_AI_ENDPOINT = import.meta.env.VITE_DINGO_AI_ENDPOINT || "/api/ai";
+const DEFAULT_ASSET_BASE = import.meta.env.BASE_URL || "./";
 
 const STATES = {
   idle: { label: "Idle", image: "assets/dingo-idle-dog.png" },
@@ -57,11 +54,23 @@ const INFO_NUDGES = [
 ];
 
 function avatarPath(state) {
-  return `${new URL(STATES[state].image, ASSET_BASE).href}?v=${ASSET_VERSION}`;
+  return `${new URL(STATES[state].image, getAssetBase()).href}?v=${ASSET_VERSION}`;
 }
 
 function assetPath(path) {
-  return new URL(path, ASSET_BASE).href;
+  return new URL(path, getAssetBase()).href;
+}
+
+function getAssetBase() {
+  return typeof window !== "undefined" && window.__DINGO_ASSET_BASE__
+    ? window.__DINGO_ASSET_BASE__
+    : DEFAULT_ASSET_BASE;
+}
+
+function getAiEndpoint() {
+  return typeof window !== "undefined" && window.__DINGO_AI_ENDPOINT__
+    ? window.__DINGO_AI_ENDPOINT__
+    : DEFAULT_AI_ENDPOINT;
 }
 
 function detectLanguage(text) {
@@ -568,7 +577,7 @@ export function DingoApp() {
   }
 
   async function askAi(prompt) {
-    const response = await fetch(AI_ENDPOINT, {
+    const response = await fetch(getAiEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: prompt, history: conversation }),

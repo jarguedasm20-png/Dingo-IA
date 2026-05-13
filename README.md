@@ -47,6 +47,7 @@ Do not place API keys in React components or frontend files. AI credentials are 
 - Backend AI call is available in `server.js`, as a serverless-style function in `api/ai.js`, and as a Base44-ready function in `base44/functions/dingoAi/entry.ts`.
 - Beginner import guide: `BASE44_IMPORT_GUIDE.md`.
 - Embed guide: `BASE44_EMBED_GUIDE.md`.
+- Static Base44 export guide: `BASE44_EXPORT_GUIDE.md`.
 - Monark website knowledge guide: `DINGO_KNOWLEDGE_SETUP.md`.
 - Environment variables expected:
   - `GEMINI_API_KEY`
@@ -74,3 +75,11 @@ After `npm run build`, include the widget in another site with:
 <script type="module" src="/dingo-widget.js"></script>
 <dingo-app></dingo-app>
 ```
+
+For Base44 static hosting, run:
+
+```bash
+npm run build:base44
+```
+
+Then copy `base44-export/dingo/` into the Base44 public folder as `public/dingo/`.
