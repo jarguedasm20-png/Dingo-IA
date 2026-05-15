@@ -1,7 +1,16 @@
 const assetVersion = "2026-05-11-debug-pass";
+const chatBackgrounds = {
+  light: `assets/chat-bg-light.png?v=${assetVersion}`,
+  dark: `assets/chat-bg-dark.png?v=${assetVersion}`,
+};
 
 function avatarPath(fileName) {
   return `assets/${fileName}?v=${assetVersion}`;
+}
+
+function getChatThemeByTime(date = new Date()) {
+  const hour = date.getHours();
+  return hour >= 6 && hour < 18 ? "light" : "dark";
 }
 
 const states = {
@@ -99,9 +108,9 @@ const bookingsKey = "monark-dingo-video-call-bookings";
 const projectLeadsKey = "monark-dingo-project-leads";
 const metricsKey = "monark-dingo-internal-events";
 const aiConfig = {
-  // AI calls go through the local backend so Gemini credentials never live in the browser.
-  endpoint: "/api/ai",
-  provider: "gemini",
+  // AI calls go through the backend so credentials never live in the browser.
+  endpoint: "/functions/dingoAi",
+  provider: "server",
 };
 const infoNudges = [
   "Planning to build in Costa Rica? Dingo can help you organize your first questions.",
@@ -207,6 +216,10 @@ let sessionBookings = [];
 let sessionProjectLeads = [];
 let sessionMetrics = [];
 let sessionConversation = [];
+let sessionLeadNotes = {};
+let lastQuickActionPrompt = "";
+let lastContextualBubbleText = "";
+let cameFromQuickEstimate = false;
 let isUserTyping = false;
 let audioContext;
 let audioUnlocked = false;
@@ -215,6 +228,21 @@ let soundMuted = false;
 function enterConversationMode() {
   panel.classList.add("conversation-mode");
   contactMenu?.classList.remove("open");
+  updateChatBackgroundMode();
+  updateConversationBackgroundState();
+}
+
+function updateChatBackgroundMode() {
+  if (!messages) return;
+  const theme = getChatThemeByTime();
+  messages.classList.remove("chat-background--light", "chat-background--dark");
+  messages.classList.add(`chat-background--${theme}`);
+  messages.style.setProperty("--chat-background-image", `url("${chatBackgrounds[theme]}")`);
+}
+
+function updateConversationBackgroundState() {
+  if (!messages) return;
+  messages.classList.toggle("has-conversation", panel.classList.contains("conversation-mode"));
 }
 
 function isDingoAppActive() {
@@ -248,6 +276,7 @@ function hideContextNudge(immediate = false) {
 
 function showStartOptions() {
   panel.classList.remove("conversation-mode");
+  updateConversationBackgroundState();
   messages.scrollTop = 0;
   input.value = "";
   input.blur();
@@ -572,6 +601,20 @@ function positionMessageAtStart(article) {
   });
 }
 
+function isNearMessagesBottom() {
+  if (!messages) return true;
+  const distanceFromBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
+  return distanceFromBottom < 84;
+}
+
+function scrollMessagesToEnd(force = false) {
+  if (!messages || (!force && !isNearMessagesBottom())) return;
+  messages.scrollTo({
+    top: messages.scrollHeight,
+    behavior: "smooth",
+  });
+}
+
 function formatReplyText(text) {
   const safeText = text
     .replace(/&/g, "&amp;")
@@ -623,6 +666,7 @@ function formatBotReplyText(text) {
 }
 
 function addMessage(text, sender, scrollMode = "end") {
+  const shouldScrollToEnd = scrollMode === "end" && (sender === "user" || isNearMessagesBottom());
   const article = document.createElement("article");
   article.className = `message ${sender}`;
   const paragraph = document.createElement("p");
@@ -637,13 +681,14 @@ function addMessage(text, sender, scrollMode = "end") {
   if (scrollMode === "start") {
     positionMessageAtStart(article);
   } else if (scrollMode === "end") {
-    messages.scrollTop = messages.scrollHeight;
+    scrollMessagesToEnd(shouldScrollToEnd);
   }
 
   return article;
 }
 
 function addBotElement(element, scrollMode = "end") {
+  const shouldScrollToEnd = scrollMode === "end" && isNearMessagesBottom();
   const article = document.createElement("article");
   article.className = "message bot schedule-message";
   article.append(element);
@@ -652,19 +697,20 @@ function addBotElement(element, scrollMode = "end") {
   if (scrollMode === "start") {
     positionMessageAtStart(article);
   } else if (scrollMode === "end") {
-    messages.scrollTop = messages.scrollHeight;
+    scrollMessagesToEnd(shouldScrollToEnd);
   }
 
   return article;
 }
 
 function addTypingMessage() {
+  const shouldScrollToEnd = true;
   const article = document.createElement("article");
   article.className = "message bot";
   article.dataset.typing = "true";
   article.innerHTML = '<div class="typing" aria-label="Dingo is typing"><span></span><span></span><span></span></div>';
   messages.append(article);
-  messages.scrollTop = messages.scrollHeight;
+  scrollMessagesToEnd(shouldScrollToEnd);
   return article;
 }
 
@@ -684,7 +730,6 @@ function shouldUseLocalAnswer(prompt) {
   return (
     isSchedulingRequest(prompt) ||
     isRestrictedTechnicalQuestion(prompt) ||
-    isPricingQuestion(prompt) ||
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres|que haces|qué haces|how can you help|what can you do|help me|ayudame|ayúdame|hola|hello|hi|buenas|contact|contacto|whatsapp|phone|telefono|teléfono|email|correo)\b/i.test(
       prompt,
     )
@@ -734,6 +779,59 @@ function rememberConversation(role, content) {
     content,
   });
   sessionConversation = sessionConversation.slice(-16);
+}
+
+function mergeLeadNotes(nextNotes = {}) {
+  Object.entries(nextNotes).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== "") {
+      sessionLeadNotes[key] = value;
+    }
+  });
+}
+
+function buildWhatsAppSummary() {
+  const parts = ["Hi Monark team, I'm interested in learning more about building in Costa Rica."];
+  if (sessionLeadNotes.location) parts.push(`Location: ${sessionLeadNotes.location}.`);
+  if (sessionLeadNotes.hasLand) parts.push("I already own land.");
+  if (sessionLeadNotes.projectType) parts.push(`Project type: ${sessionLeadNotes.projectType}.`);
+  if (sessionLeadNotes.estimatedAreaSqm) parts.push(`Approximate area: ${sessionLeadNotes.estimatedAreaSqm} m².`);
+  parts.push("I'd like to understand the next steps.");
+  return parts.join(" ");
+}
+
+function getVisiblePageHeading() {
+  const headings = [...document.querySelectorAll("h1, h2, h3")];
+  const visibleHeading = headings.find((heading) => {
+    const rect = heading.getBoundingClientRect();
+    return rect.top >= 0 && rect.top < window.innerHeight * 0.72;
+  });
+  return visibleHeading?.textContent?.trim() || document.querySelector("h1")?.textContent?.trim() || "";
+}
+
+function buildPageContext() {
+  const section = typeof getVisibleSection === "function" ? getVisibleSection() : "";
+  const selectedText = window.getSelection?.().toString().trim().slice(0, 500) || "";
+  const heading = getVisiblePageHeading();
+  return {
+    currentUrl: window.location.href,
+    pagePath: window.location.pathname,
+    pageTitle: document.title,
+    currentSection: section,
+    url: window.location.href,
+    path: window.location.pathname,
+    title: document.title,
+    heading,
+    section,
+    sectionCategory: section,
+    selectedText,
+    clickedBubbleText: lastContextualBubbleText,
+    clickedContextualBubble: lastContextualBubbleText,
+    clickedQuickAction: lastQuickActionPrompt,
+    cameFromQuickEstimate,
+    conversationHistory: sessionConversation,
+    leadNotes: sessionLeadNotes,
+    userMessageCount: sessionConversation.filter((item) => item.role !== "assistant").length + 1,
+  };
 }
 
 function getNextSaturdays(count = 5) {
@@ -966,6 +1064,8 @@ async function askDingoAi(prompt) {
     body: JSON.stringify({
       message: prompt,
       history: sessionConversation,
+      pageContext: buildPageContext(),
+      leadNotes: sessionLeadNotes,
     }),
   }).finally(() => window.clearTimeout(timeout));
 
@@ -976,11 +1076,17 @@ async function askDingoAi(prompt) {
   }
 
   const reply = String(data.reply || "").trim();
-  if (!reply) {
+  const message = String(data.message || reply || "").trim();
+  if (!message) {
     throw new Error("AI response was empty.");
   }
 
-  return reply;
+  return {
+    message,
+    buttons: Array.isArray(data.buttons) ? data.buttons : [],
+    leadNotes: data.leadNotes && typeof data.leadNotes === "object" ? data.leadNotes : {},
+    suggestedAction: data.suggestedAction || "no_action",
+  };
 }
 
 async function analyzeProjectDescription(description) {
@@ -1000,8 +1106,9 @@ async function analyzeProjectDescription(description) {
         } Do not use emojis. Use short bold subtitles. Description: ${description}`;
 
   try {
+    const aiResult = await askDingoAi(instruction);
     return {
-      text: await askDingoAi(instruction),
+      text: aiResult.message,
       projectLikely,
       language,
       source: "ai",
@@ -1215,6 +1322,8 @@ function craftReply(text) {
 
 function openPanel() {
   unlockAudio();
+  updateChatBackgroundMode();
+  updateConversationBackgroundState();
   panel.classList.add("open");
   hideContextNudge(true);
   projectPopover?.classList.remove("visible");
@@ -1290,8 +1399,10 @@ function submitPrompt(text) {
       try {
         const aiReply = await askDingoAi(prompt);
         typingMessage.remove();
-        addMessage(aiReply, "bot", "start");
-        rememberConversation("assistant", aiReply);
+        addMessage(aiReply.message, "bot", "start");
+        if (aiReply.buttons.length) addBotElement(createDingoActionButtons(aiReply.buttons), "start");
+        mergeLeadNotes(aiReply.leadNotes);
+        rememberConversation("assistant", aiReply.message);
         setState("success", { decisive: true });
         playSound("reply");
         trackDingoEvent("ai_response_received", { provider: aiConfig.provider });
@@ -1318,10 +1429,14 @@ function submitQuickAction(button) {
   }
 
   enterConversationMode();
+  lastQuickActionPrompt = prompt;
   addMessage(prompt, "user");
   addMessage(response, "bot", "start");
   rememberConversation("user", prompt);
   rememberConversation("assistant", response);
+  if (/already own land/i.test(prompt)) mergeLeadNotes({ hasLand: true });
+  if (/Guanacaste/i.test(prompt)) mergeLeadNotes({ location: "Guanacaste" });
+  if (/outside Costa Rica/i.test(prompt)) mergeLeadNotes({ livesOutsideCostaRica: true });
   input.value = "";
   stopMoodLoop();
   isUserTyping = false;
@@ -1574,11 +1689,14 @@ function createContextActionButtons(section) {
     const estimate = document.createElement("button");
     estimate.type = "button";
     estimate.textContent = "Open Quick Estimate";
-    estimate.addEventListener("click", openCalculator);
+    estimate.addEventListener("click", () => {
+      cameFromQuickEstimate = true;
+      openCalculator();
+    });
     wrapper.append(estimate);
   }
   const whatsApp = document.createElement("a");
-  whatsApp.href = "https://api.whatsapp.com/send?phone=50664471212";
+  whatsApp.href = `https://api.whatsapp.com/send?phone=50664471212&text=${encodeURIComponent(buildWhatsAppSummary())}`;
   whatsApp.target = "_blank";
   whatsApp.rel = "noreferrer";
   whatsApp.textContent = "Send WhatsApp message";
@@ -1594,6 +1712,36 @@ function createContextActionButtons(section) {
   return wrapper;
 }
 
+function createDingoActionButtons(buttons = []) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "context-action-buttons";
+  buttons.forEach((item) => {
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.textContent = item.label;
+    buttonElement.addEventListener("click", () => handleDingoAction(item.action));
+    wrapper.append(buttonElement);
+  });
+  return wrapper;
+}
+
+function handleDingoAction(action) {
+  if (action === "open_quick_estimate") {
+    cameFromQuickEstimate = true;
+    openCalculator();
+    return;
+  }
+  if (action === "send_whatsapp") {
+    window.open(`https://api.whatsapp.com/send?phone=50664471212&text=${encodeURIComponent(buildWhatsAppSummary())}`, "_blank", "noreferrer");
+    return;
+  }
+  if (action === "schedule_video_call" || action === "contact_team") {
+    submitPrompt("Schedule a video call with our Architect and Engineer.");
+    return;
+  }
+  if (action === "keep_exploring") closePanel();
+}
+
 contextNudge?.addEventListener("click", (event) => {
   if (event.target.closest(".context-nudge-close")) {
     sessionStorage.setItem("dingoContextCooldownUntil", String(Date.now() + 45000));
@@ -1603,6 +1751,7 @@ contextNudge?.addEventListener("click", (event) => {
   }
   if (!activeContextNudge) return;
   const section = activeContextNudge.section;
+  lastContextualBubbleText = activeContextNudge.text || "";
   hideContextNudge(true);
   openPanel();
   enterConversationMode();

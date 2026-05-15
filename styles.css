@@ -115,6 +115,23 @@ input {
   font-size: 12px;
   text-decoration: none;
   cursor: pointer;
+  opacity: 0;
+  animation: action-button-in 460ms cubic-bezier(0.16, 0.72, 0.24, 1) both;
+}
+
+.context-action-buttons button:nth-child(2),
+.context-action-buttons a:nth-child(2) {
+  animation-delay: 55ms;
+}
+
+.context-action-buttons button:nth-child(3),
+.context-action-buttons a:nth-child(3) {
+  animation-delay: 110ms;
+}
+
+.context-action-buttons button:nth-child(4),
+.context-action-buttons a:nth-child(4) {
+  animation-delay: 165ms;
 }
 
 .start-hint {
@@ -521,6 +538,46 @@ input {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+  isolation: isolate;
+  background-color: #fffaf4;
+}
+
+.chat-messages.chat-background--light {
+  --chat-background-image: url("assets/chat-bg-light.png");
+}
+
+.chat-messages.chat-background--dark {
+  --chat-background-image: url("assets/chat-bg-dark.png");
+}
+
+.chat-messages.has-conversation {
+  background-color: #fffaf4;
+  background-image: var(--chat-background-image);
+  background-attachment: local;
+  background-position: center;
+  background-size: cover;
+}
+
+.chat-messages.has-conversation::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.chat-messages.has-conversation::before {
+  background: rgba(255, 250, 244, 0.28);
+}
+
+.chat-messages.has-conversation.chat-background--dark::before {
+  background: rgba(12, 12, 12, 0.22);
+}
+
+.chat-messages > * {
+  position: relative;
+  z-index: 1;
 }
 
 .chat-panel:not(.conversation-mode) .message,
@@ -605,6 +662,8 @@ input {
   padding: 11px 13px;
   line-height: 1.45;
   font-size: 14px;
+  transform-origin: bottom left;
+  will-change: opacity, transform;
 }
 
 .message p {
@@ -625,12 +684,25 @@ input {
   border: 1px solid #ead8c9;
   border-left: 3px solid var(--gold);
   border-radius: 10px;
+  animation: message-in-left 520ms cubic-bezier(0.16, 0.72, 0.24, 1) both;
 }
 
 .message.user {
   align-self: flex-end;
   color: #fff;
   background: var(--forest);
+  transform-origin: bottom right;
+  animation: message-in-right 420ms cubic-bezier(0.16, 0.72, 0.24, 1) both;
+}
+
+.message.bot + .message.bot,
+.message.user + .message.user {
+  margin-top: -6px;
+}
+
+.message.bot + .message.user,
+.message.user + .message.bot {
+  margin-top: 2px;
 }
 
 .schedule-message {
@@ -760,6 +832,9 @@ input {
   display: inline-flex;
   gap: 4px;
   align-items: center;
+  min-width: 34px;
+  min-height: 16px;
+  justify-content: center;
 }
 
 .typing span {
@@ -767,7 +842,7 @@ input {
   height: 6px;
   border-radius: 50%;
   background: var(--gold-dark);
-  animation: typing 900ms ease-in-out infinite;
+  animation: typing 1080ms ease-in-out infinite;
 }
 
 .typing span:nth-child(2) {
@@ -866,6 +941,11 @@ input {
   color: #b47b23;
   cursor: pointer;
   transform: translateY(-44%);
+  transition: transform 120ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.chat-submit:active {
+  transform: translateY(-44%) scale(0.92);
 }
 
 .chat-submit span {
@@ -1168,6 +1248,45 @@ input {
   }
 }
 
+@keyframes message-in-left {
+  from {
+    opacity: 0;
+    transform: translate(-10px, 10px) scale(0.98);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes message-in-right {
+  from {
+    opacity: 0;
+    transform: translate(10px, 10px) scale(0.98);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes action-button-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes avatar-bob {
   from {
     transform: translateY(0) rotate(-1deg);
@@ -1216,9 +1335,19 @@ input {
 
 @media (prefers-reduced-motion: reduce) {
   .context-nudge,
-  .context-nudge.sweeping {
+  .context-nudge.sweeping,
+  .message,
+  .context-action-buttons button,
+  .context-action-buttons a,
+  .typing span,
+  .chat-submit {
     animation: none;
     transition: none;
+  }
+
+  .context-action-buttons button,
+  .context-action-buttons a {
+    opacity: 1;
   }
 }
 

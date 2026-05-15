@@ -30,7 +30,7 @@ Note: `npm run build` could not be executed in this Codex terminal because `npm`
 
 ## Phase 2 - Structured Backend Responses
 
-TODO:
+Status: implemented and verified through `/functions/dingoAi`.
 
 - Add typed response shape, for example:
   - `type`
@@ -42,6 +42,16 @@ TODO:
 - If JSON parsing fails, return a safe plain message.
 - Frontend should render only `message` and approved `buttons`.
 - Preserve the current chat UI.
+
+Verification performed:
+
+- `/functions/dingoAi` returned HTTP 200 for a pricing question.
+- Response included `message`, `intent`, `suggestedAction`, `buttons`, `leadNotes`, and `flags`.
+- Pricing test returned `intent: pricing_question`.
+- Pricing test returned `suggestedAction: open_quick_estimate`.
+- Pricing test returned the `Open Quick Estimate`, `Send WhatsApp message`, and `Keep exploring` buttons.
+- Frontend parsing was updated to render only user-facing `message` and `buttons`.
+- Internal fields are stored/merged only for session logic and are not rendered as chat text.
 
 ## Phase 3 - Intelligent Intent Detection
 

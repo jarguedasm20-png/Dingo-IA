@@ -5,6 +5,27 @@ type ChatMessage = {
   content?: string;
 };
 
+type PageContext = {
+  currentUrl?: string;
+  pagePath?: string;
+  pageTitle?: string;
+  currentSection?: string;
+  url?: string;
+  path?: string;
+  title?: string;
+  heading?: string;
+  section?: string;
+  sectionCategory?: string;
+  selectedText?: string;
+  clickedBubbleText?: string;
+  clickedContextualBubble?: string;
+  clickedQuickAction?: string;
+  cameFromQuickEstimate?: boolean;
+  conversationHistory?: ChatMessage[];
+  leadNotes?: Partial<DingoLeadNotes>;
+  userMessageCount?: number;
+};
+
 type KnowledgeChunk = {
   id: string;
   url: string;
@@ -14,11 +35,96 @@ type KnowledgeChunk = {
   keywords?: string[];
 };
 
+type DingoIntent =
+  | "exploring"
+  | "has_land"
+  | "looking_for_land"
+  | "outside_costa_rica"
+  | "pricing_question"
+  | "design_question"
+  | "construction_question"
+  | "property_advisory"
+  | "permit_or_legal_question"
+  | "feasibility_question"
+  | "guanacaste_question"
+  | "rental_investment_question"
+  | "meeting_ready"
+  | "light_question"
+  | "serious_project_question"
+  | "restricted_technical_question"
+  | "unknown";
+
+type DingoLeadStage = "visitor" | "curious" | "warm" | "qualified" | "meeting_ready" | "not_enough_information";
+type DingoSuggestedAction =
+  | "open_quick_estimate"
+  | "send_whatsapp"
+  | "schedule_video_call"
+  | "contact_team"
+  | "ask_follow_up"
+  | "keep_exploring"
+  | "no_action";
+type DingoButtonAction =
+  | "open_quick_estimate"
+  | "send_whatsapp"
+  | "schedule_video_call"
+  | "contact_team"
+  | "keep_exploring"
+  | "continue_chat";
+
+interface DingoButton {
+  label: string;
+  action: DingoButtonAction;
+  payload?: Record<string, unknown>;
+}
+
+interface DingoLeadNotes {
+  hasLand: boolean | null;
+  lookingForLand: boolean | null;
+  location: string | null;
+  projectType: string | null;
+  estimatedAreaSqm: number | null;
+  livesOutsideCostaRica: boolean | null;
+  budgetMentioned: boolean;
+  timelineMentioned: boolean;
+  isRentalOrInvestment: boolean;
+  topicSeriousness: "low" | "medium" | "high";
+}
+
+interface DingoFlags {
+  shouldEscalateToMeeting: boolean;
+  shouldSuggestQuickEstimate: boolean;
+  shouldSuggestWhatsApp: boolean;
+  shouldAvoidSpecificPricing: boolean;
+  isRestrictedTechnicalQuestion: boolean;
+  needsMonarkKnowledge: boolean;
+}
+
+interface DingoAIResponse {
+  message: string;
+  intent: DingoIntent;
+  leadStage: DingoLeadStage;
+  suggestedAction: DingoSuggestedAction;
+  buttons: DingoButton[];
+  leadNotes: DingoLeadNotes;
+  flags: DingoFlags;
+  internalNotes?: string;
+  confidence: number;
+}
+
 const dingoSystemPrompt = `
 You are Dingo, the Monark Design Build assistant for Costa Rica.
-You are not a generic chatbot. You are a focused project guide for Monark Design Build.
+You are not a generic chatbot and must never behave like one.
+You are a website-aware contextual AI layer for monarkcr.com and a focused project guide for Monark Design Build.
 Monark Design Build is a high-end architecture and design-build studio in Costa Rica.
 The app can schedule video calls with Monark's Architect and Engineer. Meetings last 90 minutes. Availability is Saturdays from 7:00 AM to 5:00 PM.
+
+Core context rule:
+Dingo lives inside and interacts with the Monark website, primarily monarkcr.com.
+Before answering, combine: Monark website knowledge, current page/section context, selected text, clicked bubbles or quick actions, conversation history, user intent, and lead qualification state.
+If the user asks a short contextual question like "Is this necessary?", "How accurate is this?", "What should I do next?", "What about this?", or "Can you explain it?", infer the referent from the current page/section first.
+If the user is on Property Advisory, assume "this" may refer to reviewing land/property before buying or building.
+If the user is on Quick Estimate, assume "this" may refer to the estimate tool.
+If the user is on Contact, guide them toward WhatsApp for light questions or video call for serious project topics.
 
 Use the Monark website knowledge provided in the prompt as your primary source of truth.
 Prioritize Monark website content over generic AI knowledge.
@@ -215,6 +321,221 @@ function formatKnowledgeContext(chunks: KnowledgeChunk[]) {
     .join("\n\n---\n\n");
 }
 
+function emptyLeadNotes(): DingoLeadNotes {
+  return {
+    hasLand: null,
+    lookingForLand: null,
+    location: null,
+    projectType: null,
+    estimatedAreaSqm: null,
+    livesOutsideCostaRica: null,
+    budgetMentioned: false,
+    timelineMentioned: false,
+    isRentalOrInvestment: false,
+    topicSeriousness: "low",
+  };
+}
+
+function defaultFlags(): DingoFlags {
+  return {
+    shouldEscalateToMeeting: false,
+    shouldSuggestQuickEstimate: false,
+    shouldSuggestWhatsApp: false,
+    shouldAvoidSpecificPricing: true,
+    isRestrictedTechnicalQuestion: false,
+    needsMonarkKnowledge: false,
+  };
+}
+
+function fallbackResponse(internalNotes = "Fallback response after invalid model output."): DingoAIResponse {
+  return {
+    message: "Sorry, I had trouble reading that clearly.\n\nCould you ask me again in a simpler way?",
+    intent: "unknown",
+    leadStage: "not_enough_information",
+    suggestedAction: "ask_follow_up",
+    buttons: [],
+    leadNotes: emptyLeadNotes(),
+    flags: defaultFlags(),
+    internalNotes,
+    confidence: 0,
+  };
+}
+
+function button(label: string, action: DingoButtonAction): DingoButton {
+  return { label, action };
+}
+
+function legacyExtractLeadNotes(message: string): DingoLeadNotes {
+  const normalized = normalizeText(message);
+  const areaMatch = normalized.match(/\b(\d{2,5})\s*(m2|m|sqm|metros|metro|m²)\b/);
+  const locationMatch = message.match(/\b(Tamarindo|Guanacaste|Nosara|Santa Teresa|Papagayo|Playa Grande|Escazu|San Jose|Jaco|Garabito)\b/i);
+  const rental = /\b(airbnb|rental|rent|investment|inversion|inversi[oó]n|alquiler)\b/i.test(message);
+  return {
+    hasLand: /\b(i have land|own land|already own|tengo terreno|ya tengo|propiedad)\b/i.test(message) ? true : null,
+    lookingForLand: /\b(still looking|looking for land|buscando terreno|buscando propiedad)\b/i.test(message) ? true : null,
+    location: locationMatch?.[1] || null,
+    projectType: rental ? "rental villa" : /\b(villa|house|home|casa)\b/i.test(message) ? "home" : null,
+    estimatedAreaSqm: areaMatch ? Number(areaMatch[1]) : null,
+    livesOutsideCostaRica: /\b(us|usa|united states|canada|abroad|outside costa rica|fuera de costa rica|vivo en estados unidos)\b/i.test(message) ? true : null,
+    budgetMentioned: /\b(budget|presupuesto|price|pricing|cost|costo|precio|investment|inversi[oó]n)\b/i.test(message),
+    timelineMentioned: /\b(timeline|schedule|when|cu[aá]ndo|tiempo|cronograma|fecha)\b/i.test(message),
+    isRentalOrInvestment: rental,
+    topicSeriousness: /\b(permit|permiso|feasibility|viabilidad|zoning|water|agua|slope|pendiente|construction|construccion|budget|presupuesto)\b/i.test(message) || rental ? "high" : "medium",
+  };
+}
+
+function mergeLeadNotes(base: DingoLeadNotes, next: Partial<DingoLeadNotes> = {}): DingoLeadNotes {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(next) as [keyof DingoLeadNotes, DingoLeadNotes[keyof DingoLeadNotes]][]) {
+    if (value !== null && value !== undefined && value !== "") {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}
+
+function extractLeadNotes(message: string, context: PageContext = {}): DingoLeadNotes {
+  const contextText = [
+    context.selectedText,
+    context.clickedQuickAction,
+    context.clickedContextualBubble,
+    context.clickedBubbleText,
+    context.section,
+    context.currentSection,
+    context.sectionCategory,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const extracted = legacyExtractLeadNotes(`${message} ${contextText}`);
+  return mergeLeadNotes(extracted, context.leadNotes);
+}
+
+function classifyIntent(message: string, history: ChatMessage[], context: PageContext = {}): { intent: DingoIntent; confidence: number } {
+  const normalized = normalizeText(message);
+  const contextualText = normalizeText(`${message} ${context.selectedText || ""} ${context.clickedQuickAction || ""} ${context.clickedContextualBubble || ""} ${context.clickedBubbleText || ""}`);
+  const section = normalizeText(`${context.section || ""} ${context.currentSection || ""} ${context.sectionCategory || ""} ${context.heading || ""}`);
+  if (/\b(openai|api|api key|codex|github|backend|frontend|model|prompt|system instruction|widget|built|developed)\b/.test(normalized)) {
+    return { intent: "restricted_technical_question", confidence: 0.96 };
+  }
+  if (/\b(monark|services|servicios|can monark|monark help|puede monark|ayudarme)\b/.test(contextualText)) return { intent: "design_question", confidence: 0.86 };
+  if (/\b(price|pricing|cost|budget|estimate|investment|costo|precio|presupuesto|cotizar|metro cuadrado|sqm|m2)\b/.test(normalized)) {
+    return { intent: "pricing_question", confidence: 0.93 };
+  }
+  if (/\b(airbnb|rental|rent|investment|alquiler|inversion)\b/.test(normalized)) return { intent: "rental_investment_question", confidence: 0.9 };
+  if (/\b(i have land|own land|already own|tengo terreno|ya tengo propiedad)\b/.test(normalized)) return { intent: "has_land", confidence: 0.88 };
+  if (/\b(looking for land|still looking|buscando terreno)\b/.test(normalized)) return { intent: "looking_for_land", confidence: 0.86 };
+  if (/\b(outside costa rica|abroad|united states|usa|canada|fuera de costa rica)\b/.test(normalized)) return { intent: "outside_costa_rica", confidence: 0.86 };
+  if (/\b(property advisory|land advisory|before buying|property)\b/.test(section) && /\b(this|that|necessary|worth it|esto|eso|necesario|vale la pena)\b/.test(normalized)) return { intent: "property_advisory", confidence: 0.88 };
+  if (/\b(contact|whatsapp|call|email)\b/.test(section) && /\b(next|what should|continue|contact|start|siguiente|continuar|contactar)\b/.test(normalized)) return { intent: "light_question", confidence: 0.84 };
+  if (/\b(quick estimate|estimate|pricing)\b/.test(section)) return { intent: "pricing_question", confidence: 0.82 };
+  if (/\b(permit|legal|cfia|zoning|municipal|permiso|uso de suelo)\b/.test(normalized)) return { intent: "permit_or_legal_question", confidence: 0.88 };
+  if (/\b(feasibility|viability|can i build|water|slope|access|viabilidad|agua|pendiente|acceso)\b/.test(normalized)) return { intent: "feasibility_question", confidence: 0.86 };
+  if (/\b(guanacaste|tamarindo|nosara|papagayo|playa grande)\b/.test(normalized)) return { intent: "guanacaste_question", confidence: 0.84 };
+  if (/\b(tropical|tropics|climate|shade|ventilation)\b/.test(normalized)) return { intent: "design_question", confidence: 0.82 };
+  if (/\b(construction|build|builder|construccion|construir)\b/.test(normalized)) return { intent: "construction_question", confidence: 0.82 };
+  if (/\b(design|architecture|arquitectura|diseno|diseño)\b/.test(normalized)) return { intent: "design_question", confidence: 0.82 };
+  if (/\b(contact|whatsapp|email|call|contactar|mensaje)\b/.test(normalized)) return { intent: "light_question", confidence: 0.8 };
+  if (history.length >= 12) return { intent: "serious_project_question", confidence: 0.78 };
+  return { intent: "exploring", confidence: 0.68 };
+}
+
+function needsKnowledge(intent: DingoIntent) {
+  return !["restricted_technical_question", "light_question", "unknown"].includes(intent);
+}
+
+function buildStructuredResponse(message: string, modelMessage: string, history: ChatMessage[], context: PageContext = {}, hasKnowledge = true): DingoAIResponse {
+  const { intent, confidence } = classifyIntent(message, history, context);
+  const leadNotes = extractLeadNotes(message, context);
+  const flags = defaultFlags();
+  flags.needsMonarkKnowledge = needsKnowledge(intent);
+  flags.isRestrictedTechnicalQuestion = intent === "restricted_technical_question";
+  flags.shouldSuggestQuickEstimate = intent === "pricing_question";
+  flags.shouldAvoidSpecificPricing = true;
+  flags.shouldEscalateToMeeting = ["rental_investment_question", "permit_or_legal_question", "feasibility_question", "serious_project_question"].includes(intent) ||
+    (history.filter((item) => item.role !== "assistant").length + 1 >= 7) ||
+    Boolean(leadNotes.hasLand && leadNotes.location);
+  flags.shouldSuggestWhatsApp = intent === "light_question";
+
+  let leadStage: DingoLeadStage = "curious";
+  let suggestedAction: DingoSuggestedAction = "ask_follow_up";
+  let buttons: DingoButton[] = [];
+  let userMessage = modelMessage.trim();
+
+  if (intent === "restricted_technical_question") {
+    leadStage = "visitor";
+    suggestedAction = "keep_exploring";
+    userMessage = "I'm just a very polite dog with good taste in architecture.\n\nBut I can help you with Monark, design, or building in Costa Rica.";
+  } else if (intent === "pricing_question") {
+    leadStage = "warm";
+    suggestedAction = "open_quick_estimate";
+    const quickEstimateContext = context.cameFromQuickEstimate || /\b(quick estimate|estimate|pricing)\b/.test(normalizeText(`${context.section || ""} ${context.currentSection || ""} ${context.sectionCategory || ""}`));
+    userMessage = quickEstimateContext
+      ? "Quick Estimate is a first reference, not a final quote.\n\nIt helps start the conversation using m² / sqm, but Monark should review the site, scope, finishes, and technical details before confirming numbers."
+      : leadNotes.estimatedAreaSqm
+      ? `Perfect, ${leadNotes.estimatedAreaSqm} m² helps.\n\nThe best next step is to run it through Quick Estimate, so you get a cleaner first reference.`
+      : "Good question.\n\nFor pricing, the best first step is Quick Estimate.\n\nIt uses m² / sqm to give you a first reference.";
+    buttons = [
+      button("Open Quick Estimate", "open_quick_estimate"),
+      button("Send WhatsApp message", "send_whatsapp"),
+      button("Keep exploring", "keep_exploring"),
+    ];
+  } else if (flags.needsMonarkKnowledge && !hasKnowledge) {
+    leadStage = "curious";
+    suggestedAction = "contact_team";
+    userMessage = "I don't have that exact detail from the website yet.\n\nThe Monark team can confirm it directly for you.";
+    buttons = [
+      button("Send WhatsApp message", "send_whatsapp"),
+      button("Schedule video call", "schedule_video_call"),
+      button("Keep exploring", "keep_exploring"),
+    ];
+  } else if (intent === "property_advisory") {
+    leadStage = "warm";
+    suggestedAction = "ask_follow_up";
+    userMessage = userMessage || "Yes, especially before buying land.\n\nA lot can look beautiful, but access, water, slope, zoning, and buildability can change everything.\n\nAre you looking at a specific property?";
+  } else if (intent === "has_land") {
+    leadStage = "warm";
+    suggestedAction = "ask_follow_up";
+    userMessage = userMessage || "Perfect. The land is the best place to start.\n\nBefore designing, it is important to understand access, slope, water, views, and setbacks.\n\nDo you already have a survey or site plan?";
+  } else if (intent === "looking_for_land") {
+    leadStage = "warm";
+    suggestedAction = "ask_follow_up";
+    userMessage = userMessage || "A beautiful lot can still hide expensive challenges.\n\nBefore buying, it is smart to review access, water, slope, zoning, and buildability.\n\nAre you already looking at a specific property?";
+  } else if (intent === "outside_costa_rica") {
+    leadStage = "warm";
+    suggestedAction = "ask_follow_up";
+    userMessage = userMessage || "No problem. You can start the early planning remotely.\n\nThe key is having clear local guidance before making big decisions.\n\nDo you already own property in Costa Rica?";
+  } else if (flags.shouldEscalateToMeeting) {
+    leadStage = "qualified";
+    suggestedAction = "schedule_video_call";
+    userMessage = userMessage || "This sounds project-specific.\n\nI can guide you with the basics, but the Monark team would be much better for this part.\n\nWould you like to schedule a short video call?";
+    buttons = [
+      button("Schedule video call", "schedule_video_call"),
+      button("Send WhatsApp message", "send_whatsapp"),
+      button("Keep exploring", "keep_exploring"),
+    ];
+  } else if (intent === "light_question") {
+    leadStage = "curious";
+    suggestedAction = "send_whatsapp";
+    buttons = [
+      button("Send WhatsApp message", "send_whatsapp"),
+      button("Schedule video call", "schedule_video_call"),
+      button("Keep exploring", "keep_exploring"),
+    ];
+  }
+
+  return {
+    message: userMessage || fallbackResponse().message,
+    intent,
+    leadStage,
+    suggestedAction,
+    buttons,
+    leadNotes,
+    flags,
+    internalNotes: "Structured by dingoAi backend. Do not display internal fields in the frontend.",
+    confidence,
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -229,7 +550,7 @@ Deno.serve(async (request) => {
     return jsonResponse(503, { error: "OpenAI API key is not configured." });
   }
 
-  let payload: { message?: string; history?: ChatMessage[] };
+  let payload: { message?: string; history?: ChatMessage[]; pageContext?: PageContext; context?: PageContext; leadNotes?: Partial<DingoLeadNotes> };
   try {
     payload = await request.json();
   } catch {
@@ -238,16 +559,61 @@ Deno.serve(async (request) => {
 
   const message = String(payload.message || "").trim();
   const history = Array.isArray(payload.history) ? payload.history.slice(-16) : [];
+  const pageContext: PageContext = {
+    ...(payload.context || {}),
+    ...(payload.pageContext || {}),
+    leadNotes: payload.leadNotes || payload.pageContext?.leadNotes || payload.context?.leadNotes,
+  };
+  pageContext.url = pageContext.url || pageContext.currentUrl;
+  pageContext.path = pageContext.path || pageContext.pagePath;
+  pageContext.title = pageContext.title || pageContext.pageTitle;
+  pageContext.section = pageContext.section || pageContext.currentSection;
+  pageContext.clickedContextualBubble = pageContext.clickedContextualBubble || pageContext.clickedBubbleText;
 
   if (!message) {
     return jsonResponse(400, { error: "Message is required." });
   }
 
   const knowledge = await knowledgePromise;
-  const conversationSearchText = `${history.map((item) => item.content || "").join(" ")} ${message}`;
+  const conversationSearchText = [
+    history.map((item) => item.content || "").join(" "),
+    message,
+    pageContext.title,
+    pageContext.heading,
+    pageContext.section,
+    pageContext.currentSection,
+    pageContext.sectionCategory,
+    pageContext.selectedText,
+    pageContext.clickedContextualBubble,
+    pageContext.clickedBubbleText,
+    pageContext.clickedQuickAction,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const relevantKnowledge = findRelevantKnowledge(knowledge, conversationSearchText);
   const knowledgeContext = formatKnowledgeContext(relevantKnowledge);
   const userMessageCount = history.filter((item) => item.role !== "assistant").length + 1;
+  const preflight = buildStructuredResponse(message, "", history, pageContext, relevantKnowledge.length > 0);
+
+  if (
+    preflight.intent === "restricted_technical_question" ||
+    preflight.intent === "pricing_question" ||
+    preflight.intent === "property_advisory" ||
+    preflight.suggestedAction === "send_whatsapp" ||
+    preflight.flags.shouldEscalateToMeeting ||
+    ["has_land", "looking_for_land", "outside_costa_rica"].includes(preflight.intent)
+  ) {
+    return jsonResponse(200, {
+      ...preflight,
+      reply: preflight.message,
+      provider: "openai",
+      finishReason: "preflight_structured_response",
+      sources: relevantKnowledge.map((chunk) => ({
+        title: chunk.title,
+        url: chunk.url,
+      })),
+    });
+  }
 
   try {
     const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -270,6 +636,10 @@ Deno.serve(async (request) => {
             role: "system",
             content: `Conversation context: this request is user message number ${userMessageCount} in the current visible conversation. If this is around message 6 or later, or if the user is getting into project-specific details, you may gently suggest a meeting with Monark.`,
           },
+          {
+            role: "system",
+            content: `Current page context from monarkcr.com / website widget:\nURL: ${pageContext.url || "unknown"}\nPath: ${pageContext.path || "unknown"}\nTitle: ${pageContext.title || "unknown"}\nVisible heading: ${pageContext.heading || "unknown"}\nCurrent section: ${pageContext.section || pageContext.sectionCategory || "unknown"}\nSelected text: ${pageContext.selectedText || "none"}\nClicked quick action: ${pageContext.clickedQuickAction || "none"}\nClicked contextual bubble: ${pageContext.clickedContextualBubble || "none"}\nCame from Quick Estimate: ${pageContext.cameFromQuickEstimate ? "yes" : "no"}\nIf the user says "this", "that", "is this necessary", "how accurate is this", or similar, use this page context before answering.`,
+          },
           ...history.map((item) => ({
             role: item.role === "assistant" ? "assistant" : "user",
             content: String(item.content || "").slice(0, 1200),
@@ -290,11 +660,12 @@ Deno.serve(async (request) => {
       });
     }
 
+    const modelMessage = String(data.choices?.[0]?.message?.content || "").trim();
+    const structured = buildStructuredResponse(message, modelMessage, history, pageContext, relevantKnowledge.length > 0);
     return jsonResponse(200, {
-      reply: String(data.choices?.[0]?.message?.content || "").trim() ||
-        "I could not generate a response right now.",
+      ...structured,
+      reply: structured.message,
       provider: "openai",
-      model: openAiModel,
       finishReason: data.choices?.[0]?.finish_reason || null,
       sources: relevantKnowledge.map((chunk) => ({
         title: chunk.title,
@@ -302,8 +673,6 @@ Deno.serve(async (request) => {
       })),
     });
   } catch {
-    return jsonResponse(500, {
-      error: "Could not reach OpenAI from the Base44 function.",
-    });
+    return jsonResponse(200, fallbackResponse("Could not reach OpenAI from the Base44 function."));
   }
 });

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const ASSET_VERSION = "2026-05-11-debug-pass";
 const WHATSAPP_URL = "https://api.whatsapp.com/send?phone=50664471212";
 const MONARK_EMAIL = "info@monarkcr.com";
-const DEFAULT_AI_ENDPOINT = import.meta.env.VITE_DINGO_AI_ENDPOINT || "/api/ai";
+const DEFAULT_AI_ENDPOINT = import.meta.env.VITE_DINGO_AI_ENDPOINT || "/functions/dingoAi";
 const DEFAULT_ASSET_BASE = import.meta.env.BASE_URL || "./";
 
 const STATES = {
@@ -151,6 +151,11 @@ function getAiEndpoint() {
     : DEFAULT_AI_ENDPOINT;
 }
 
+function getChatThemeByTime(date = new Date()) {
+  const hour = date.getHours();
+  return hour >= 6 && hour < 18 ? "light" : "dark";
+}
+
 function getContextualSectionFromElement(element) {
   const section = element?.closest?.("[data-dingo-section]")?.getAttribute("data-dingo-section");
   if (section && CONTEXTUAL_BUBBLES[section]) return section;
@@ -220,7 +225,6 @@ function shouldUseLocalAnswer(text) {
   return (
     isSchedulingRequest(text) ||
     isRestrictedTechnicalQuestion(text) ||
-    isPricingQuestion(text) ||
     /\b(quien eres|quién eres|who are you|what are you|como te llamas|cómo te llamas|your name|tu nombre|que eres|qué eres|que haces|qué haces|how can you help|what can you do|help me|ayudame|ayúdame|hola|hello|hi|buenas|contact|contacto|whatsapp|phone|telefono|teléfono|email|correo)\b/i.test(
       text,
     )
@@ -432,7 +436,7 @@ function TextMessage({ message }) {
 
 function TypingMessage() {
   return (
-    <article className="message bot">
+    <article className="message bot" data-typing="true">
       <div className="typing" aria-label="Dingo is typing">
         <span />
         <span />
@@ -442,7 +446,7 @@ function TypingMessage() {
   );
 }
 
-function ContextActionMessage({ section, onSchedule, onKeepExploring, onOpenEstimate }) {
+function ContextActionMessage({ section, onSchedule, onKeepExploring, onOpenEstimate, onWhatsApp }) {
   const isQuickEstimate = section === "quick-estimate";
   return (
     <article className="message bot context-action-message">
@@ -452,15 +456,30 @@ function ContextActionMessage({ section, onSchedule, onKeepExploring, onOpenEsti
             Open Quick Estimate
           </button>
         )}
-        <a href={MONARK_WHATSAPP_URL} target="_blank" rel="noreferrer">
+        <button type="button" onClick={onWhatsApp}>
           Send WhatsApp message
-        </a>
+        </button>
         <button type="button" onClick={onSchedule}>
           Schedule video call
         </button>
         <button type="button" onClick={onKeepExploring}>
           Keep exploring
         </button>
+      </div>
+    </article>
+  );
+}
+
+function DingoActionButtons({ buttons, onAction }) {
+  if (!buttons?.length) return null;
+  return (
+    <article className="message bot context-action-message">
+      <div className="context-action-buttons">
+        {buttons.map((item) => (
+          <button key={`${item.action}-${item.label}`} type="button" onClick={() => onAction(item.action, item.payload)}>
+            {item.label}
+          </button>
+        ))}
       </div>
     </article>
   );
@@ -679,6 +698,7 @@ export function DingoApp() {
   const [state, setState] = useState("idle");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
+  const [chatTheme, setChatTheme] = useState(getChatThemeByTime);
   const [isTyping, setIsTyping] = useState(false);
   const [showStartHint, setShowStartHint] = useState(true);
   const [contactOpen, setContactOpen] = useState(false);
@@ -688,8 +708,12 @@ export function DingoApp() {
   const [popoverShown, setPopoverShown] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [conversation, setConversation] = useState([]);
+  const [leadNotes, setLeadNotes] = useState({});
   const [metrics, setMetrics] = useState([]);
   const messagesRef = useRef(null);
+  const lastQuickActionRef = useRef("");
+  const lastContextualBubbleRef = useRef("");
+  const cameFromQuickEstimateRef = useRef(false);
   const audio = useAudio();
 
   const visualState = isTyping ? "excited" : state;
@@ -722,6 +746,80 @@ export function DingoApp() {
     setConversation((current) => [...current, { role, content }].slice(-16));
   }
 
+  function mergeLeadNotes(nextNotes = {}) {
+    setLeadNotes((current) => {
+      const merged = { ...current };
+      Object.entries(nextNotes).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") merged[key] = value;
+      });
+      return merged;
+    });
+  }
+
+  function buildWhatsAppMessage() {
+    const parts = ["Hi Monark team, I'm interested in building in Costa Rica."];
+    if (leadNotes.location) parts.push(`Location: ${leadNotes.location}.`);
+    if (leadNotes.hasLand) parts.push("I already own land.");
+    if (leadNotes.projectType) parts.push(`Project type: ${leadNotes.projectType}.`);
+    if (leadNotes.estimatedAreaSqm) parts.push(`Approximate area: ${leadNotes.estimatedAreaSqm} m².`);
+    parts.push("I'd like to understand the next steps.");
+    return parts.join(" ");
+  }
+
+  function getVisiblePageHeading() {
+    const headings = [...document.querySelectorAll("h1, h2, h3")];
+    const visibleHeading = headings.find((heading) => {
+      const rect = heading.getBoundingClientRect();
+      return rect.top >= 0 && rect.top < window.innerHeight * 0.72;
+    });
+    return visibleHeading?.textContent?.trim() || document.querySelector("h1")?.textContent?.trim() || "";
+  }
+
+  function buildPageContext() {
+    const section = getVisibleContextualSection();
+    const selectedText = window.getSelection?.().toString().trim().slice(0, 500) || "";
+    const heading = getVisiblePageHeading();
+    return {
+      currentUrl: window.location.href,
+      pagePath: window.location.pathname,
+      pageTitle: document.title,
+      currentSection: section,
+      url: window.location.href,
+      path: window.location.pathname,
+      title: document.title,
+      heading,
+      section,
+      sectionCategory: section,
+      selectedText,
+      clickedBubbleText: lastContextualBubbleRef.current,
+      clickedContextualBubble: lastContextualBubbleRef.current,
+      clickedQuickAction: lastQuickActionRef.current,
+      cameFromQuickEstimate: cameFromQuickEstimateRef.current,
+      conversationHistory: conversation,
+      leadNotes,
+      userMessageCount: conversation.filter((item) => item.role !== "assistant").length + 1,
+    };
+  }
+
+  function handleDingoAction(action) {
+    if (action === "open_quick_estimate") {
+      cameFromQuickEstimateRef.current = true;
+      const reply = "Use Quick Estimate from the main menu to get a first reference based on m² / sqm.";
+      addMessage({ sender: "bot", text: reply }, "start");
+      remember("assistant", reply);
+      return;
+    }
+    if (action === "send_whatsapp") {
+      window.open(`${MONARK_WHATSAPP_URL}&text=${encodeURIComponent(buildWhatsAppMessage())}`, "_blank", "noreferrer");
+      return;
+    }
+    if (action === "schedule_video_call" || action === "contact_team") {
+      submitPrompt("Schedule a video call with our Architect and Engineer.");
+      return;
+    }
+    if (action === "keep_exploring") closePanel();
+  }
+
   function scrollToMessageStart(index) {
     window.requestAnimationFrame(() => {
       const container = messagesRef.current;
@@ -732,7 +830,18 @@ export function DingoApp() {
     });
   }
 
+  function isNearMessagesBottom(container) {
+    if (!container) return true;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceFromBottom < 84;
+  }
+
   function addMessage(message, scrollMode = "end") {
+    const containerBeforeUpdate = messagesRef.current;
+    const shouldScrollToEnd =
+      scrollMode === "end" &&
+      (message.sender === "user" || message.sender === "typing" || isNearMessagesBottom(containerBeforeUpdate));
+
     setMessages((current) => {
       const next = [...current, message];
       const index = next.length - 1;
@@ -740,7 +849,9 @@ export function DingoApp() {
         const container = messagesRef.current;
         if (!container) return;
         if (scrollMode === "start") scrollToMessageStart(index);
-        if (scrollMode === "end") container.scrollTop = container.scrollHeight;
+        if (scrollMode === "end" && shouldScrollToEnd) {
+          container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        }
       });
       return next;
     });
@@ -749,6 +860,7 @@ export function DingoApp() {
   function openPanel() {
     audio.unlock();
     hideContextNudge(true);
+    setChatTheme(getChatThemeByTime());
     setIsOpen(true);
     setShowStartHint(false);
     setState("greeting");
@@ -832,6 +944,7 @@ export function DingoApp() {
   function handleContextNudgeClick() {
     if (!nudge) return;
     const section = nudge.section;
+    lastContextualBubbleRef.current = nudge.text || "";
     hideContextNudge(true);
     openPanel();
     const reply = getContextClickText(section);
@@ -846,11 +959,21 @@ export function DingoApp() {
     const response = await fetch(getAiEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: prompt, history: conversation }),
+      body: JSON.stringify({
+        message: prompt,
+        history: conversation,
+        pageContext: buildPageContext(),
+        leadNotes,
+      }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "AI request failed.");
-    return String(data.reply || "").trim();
+    return {
+      message: String(data.message || data.reply || "").trim(),
+      buttons: Array.isArray(data.buttons) ? data.buttons : [],
+      leadNotes: data.leadNotes && typeof data.leadNotes === "object" ? data.leadNotes : {},
+      suggestedAction: data.suggestedAction || "no_action",
+    };
   }
 
   async function submitPrompt(promptValue) {
@@ -903,8 +1026,10 @@ export function DingoApp() {
       try {
         const aiReply = await askAi(prompt);
         removeTyping();
-        addMessage({ sender: "bot", text: aiReply }, "start");
-        remember("assistant", aiReply);
+        addMessage({ sender: "bot", text: aiReply.message }, "start");
+        if (aiReply.buttons.length) addMessage({ sender: "action-buttons", buttons: aiReply.buttons }, "start");
+        mergeLeadNotes(aiReply.leadNotes);
+        remember("assistant", aiReply.message);
         setState("success");
         audio.play("reply");
         track("ai_response_received");
@@ -925,10 +1050,14 @@ export function DingoApp() {
   function submitQuickAction(action) {
     openPanel();
     const userText = action.prompt;
+    lastQuickActionRef.current = userText;
     addMessage({ sender: "user", text: userText }, "end");
     addMessage({ sender: "bot", text: action.response }, "start");
     remember("user", userText);
     remember("assistant", action.response);
+    if (/already own land/i.test(userText)) mergeLeadNotes({ hasLand: true });
+    if (/Guanacaste/i.test(userText)) mergeLeadNotes({ location: "Guanacaste" });
+    if (/outside Costa Rica/i.test(userText)) mergeLeadNotes({ livesOutsideCostaRica: true });
     setInput("");
     setIsTyping(false);
     setState("success");
@@ -1023,6 +1152,14 @@ export function DingoApp() {
     }, 500);
   }
 
+  const hasConversation = messages.length > 0;
+  const chatMessagesClass = `chat-messages ${
+    hasConversation ? `has-conversation chat-background--${chatTheme}` : ""
+  }`.trim();
+  const chatMessagesStyle = hasConversation
+    ? { "--chat-background-image": `url("${assetPath(`assets/chat-bg-${chatTheme}.png`)}")` }
+    : undefined;
+
   return (
     <>
       <main className="blank-page" aria-label="Dingo assistant widget" />
@@ -1067,7 +1204,7 @@ export function DingoApp() {
           <span className="notification-dot" />
         </button>
 
-        <section className={`chat-panel ${isOpen ? "open" : ""}`} aria-label="Chat with Dingo">
+        <section className={`chat-panel ${isOpen ? "open" : ""} ${hasConversation ? "conversation-mode" : ""}`} aria-label="Chat with Dingo">
           <header className="chat-header">
             <div className="assistant-card">
               <img className="header-logo" src={assetPath("assets/monark-logo-round.png")} alt="Monark logo" />
@@ -1083,7 +1220,7 @@ export function DingoApp() {
             </button>
           </header>
 
-          <div className="chat-messages" ref={messagesRef}>
+          <div className={chatMessagesClass} style={chatMessagesStyle} ref={messagesRef}>
             <WelcomeCard />
             {messages.map((message, index) => {
               if (message.sender === "typing") return <TypingMessage key={message.id || index} />;
@@ -1101,13 +1238,22 @@ export function DingoApp() {
                       section={message.section}
                       onSchedule={() => submitPrompt("Schedule a video call with our Architect and Engineer.")}
                       onKeepExploring={closePanel}
+                      onWhatsApp={() => handleDingoAction("send_whatsapp")}
                       onOpenEstimate={() => {
+                        cameFromQuickEstimateRef.current = true;
                         const reply =
                           "Use Quick Estimate from the main menu to get a first reference based on m² / sqm.\n\nAfter that, I can help you contact Monark.";
                         addMessage({ sender: "bot", text: reply }, "start");
                         remember("assistant", reply);
                       }}
                     />
+                  </div>
+                );
+              }
+              if (message.sender === "action-buttons") {
+                return (
+                  <div data-message-index={index} key={`action-buttons-${index}`}>
+                    <DingoActionButtons buttons={message.buttons} onAction={handleDingoAction} />
                   </div>
                 );
               }
